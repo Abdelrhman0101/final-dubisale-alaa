@@ -5,7 +5,7 @@ class ManageAdsRepository {
   final ApiService _apiService;
   ManageAdsRepository(this._apiService);
 
-  Future<MyAdsResponse> getMyAds({required String token}) async {
+  Future<MyAdsResponse> getMyAds({String? token}) async {
     // يمكن إضافة query parameters هنا إذا احتجت للـ pagination
     // مثال: final response = await _apiService.get('/api/my-ads', token: token, query: {'page': 1});
     final response = await _apiService.get('/api/my-ads', token: token);
@@ -30,7 +30,11 @@ class ManageAdsRepository {
       'days': days,
     };
     
-    // استخدم دالة 'post' الموجودة في ApiService
-    await _apiService.post('/api/offers-box/activate', data: body, token: token);
+    try {
+      // استخدم دالة 'post' الموجودة في ApiService
+      final response = await _apiService.post('/api/offers-box/activate', data: body, token: token);
+    } catch (e) {
+      rethrow;
+    }
   }
 }

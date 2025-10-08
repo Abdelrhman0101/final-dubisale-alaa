@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:advertising_app/presentation/providers/car_services_offers_provider.dart';
 import 'package:advertising_app/data/model/car_service_ad_model.dart';
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 
 
 // تعريف الثوابت المستخدمة في الألوان
@@ -30,6 +31,7 @@ class _CarServiceOfferBoxState extends State<CarServiceOfferBox> {
   List<String> _selectedDistricts = [];
   String? _priceFrom, _priceTo;
   Timer? _debounce;
+  bool _sortByDateEnabled = false;
 
   @override
   void initState() {
@@ -266,8 +268,12 @@ class _CarServiceOfferBoxState extends State<CarServiceOfferBox> {
                                       child: Transform.scale(
                                         scale: 0.8,
                                         child: Switch(
-                                          value: true,
-                                          onChanged: (val) {},
+                                          value: _sortByDateEnabled,
+                                          onChanged: (val) {
+                                            setState(() {
+                                              _sortByDateEnabled = val;
+                                            });
+                                          },
                                           activeColor: Colors.white,
                                           activeTrackColor:
                                               const Color.fromRGBO(8, 194, 201, 1),
@@ -374,28 +380,20 @@ class _CarServiceOfferBoxState extends State<CarServiceOfferBox> {
                                 Stack(children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(4.r),
-                                    child: Image.network(
-                                      ImageUrlHelper.getFullImageUrl(car.mainImage),
+                                    child: CachedNetworkImage(
+                                      imageUrl: ImageUrlHelper.getFullImageUrl(car.mainImage),
                                       height: (cardSize.height * 0.6).h,
                                       width: double.infinity,
                                       fit: BoxFit.cover,
-                                      loadingBuilder: (context, child, loadingProgress) {
-                                        if (loadingProgress == null) return child;
-                                        return Container(
-                                          height: (cardSize.height * 0.6).h,
-                                          width: double.infinity,
-                                          color: Colors.grey[200],
-                                          child: Center(
-                                            child: CircularProgressIndicator(
-                                              value: loadingProgress.expectedTotalBytes != null
-                                                  ? loadingProgress.cumulativeBytesLoaded /
-                                                      loadingProgress.expectedTotalBytes!
-                                                  : null,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      errorBuilder: (c, e, s) => Container(
+                                      placeholder: (context, url) => Container(
+                                        height: (cardSize.height * 0.6).h,
+                                        width: double.infinity,
+                                        color: Colors.grey[200],
+                                        child: Center(
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Container(
                                         height: (cardSize.height * 0.6).h,
                                         width: double.infinity,
                                         color: Colors.grey[200],
@@ -458,7 +456,7 @@ class _CarServiceOfferBoxState extends State<CarServiceOfferBox> {
                                             SizedBox(width: 5),
                                             Expanded(
                                               child: Text(
-                                               "${ car.district ?? 'غير محدد'} ${car.district}",
+                                               "${ car.emirate ?? 'غير محدد'} ${car.district}",
                                                 style: TextStyle(
                                                   fontSize: 12.sp,
                                                   color: Color.fromRGBO(

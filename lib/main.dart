@@ -6,21 +6,40 @@ import 'package:advertising_app/data/web_services/google_api_service.dart';
 import 'package:advertising_app/data/web_services/google_maps_service.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/providers/auth_repository.dart';
+import 'package:advertising_app/presentation/providers/car_rent_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/car_rent_info_provider.dart';
+import 'package:advertising_app/presentation/providers/car_rent_offers_provider.dart';
 import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/car_sales_info_provider.dart';
 import 'package:advertising_app/presentation/providers/car_services_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/car_services_info_provider.dart';
 import 'package:advertising_app/presentation/providers/car_services_provider.dart';
 import 'package:advertising_app/presentation/providers/car_services_offers_provider.dart';
+import 'package:advertising_app/presentation/providers/electronic_details_provider.dart';
+import 'package:advertising_app/presentation/providers/electronics_ad_post_provider.dart';
+import 'package:advertising_app/presentation/providers/job_details_provider.dart';
 import 'package:advertising_app/presentation/providers/manage_ads_provider.dart';
 import 'package:advertising_app/presentation/providers/google_maps_provider.dart';
+import 'package:advertising_app/presentation/providers/other_services_details_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_details_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_info_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_offers_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurant_details_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurants_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurant_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/restaurant_offers_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurants_info_provider.dart';
 import 'package:advertising_app/data/repository/restaurants_repository.dart';
 import 'package:advertising_app/presentation/providers/settings_provider.dart';
 import 'package:advertising_app/data/repository/settings_repository.dart';
+import 'package:advertising_app/presentation/providers/job_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/job_offer_ads_provider.dart';
+import 'package:advertising_app/presentation/providers/job_info_provider.dart';
+import 'package:advertising_app/presentation/providers/electronics_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/electronics_info_provider.dart';
+import 'package:advertising_app/presentation/providers/other_services_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/other_services_info_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -69,7 +88,9 @@ void main() async {
         ChangeNotifierProvider(
           create: (_) => SettingsProvider(settingsRepository), // <-- Settings Provider
         ),
-
+        ChangeNotifierProvider(create: (_) => CarRentInfoProvider()),
+        ChangeNotifierProvider(create: (_) => CarRentAdProvider()),
+        ChangeNotifierProvider(create: (_) => CarRentOffersProvider()),
  ChangeNotifierProvider(create: (_) => RestaurantDetailsProvider()),
 
          ChangeNotifierProvider(create: (_) => CarServicesInfoProvider()),
@@ -82,7 +103,28 @@ void main() async {
           update: (context, restaurantsInfoProvider, previous) => previous ?? RestaurantAdProvider(restaurantsInfoProvider),
         ),
         ChangeNotifierProvider(create: (_) => RestaurantsAdProvider()),
- 
+        ChangeNotifierProvider(create: (_) => RestaurantOffersProvider()),
+        ChangeNotifierProvider(create: (_) => RealEstateAdProvider()),
+        ChangeNotifierProvider(create: (_) => RealEstateInfoProvider()),
+        ChangeNotifierProvider(create: (_) => RealEstateDetailsProvider()),
+        ChangeNotifierProvider(create: (_) => RealEstateOffersProvider()),
+        ChangeNotifierProvider(create: (_) => JobAdProvider()),
+        // مزود معلومات الوظائف (أنواع الفئات + صور الفئات)
+        ChangeNotifierProvider(create: (_) => JobInfoProvider()),
+        // مزود إعلانات عروض الوظائف
+        ChangeNotifierProvider(create: (_) => JobOfferAdsProvider()),
+        ChangeNotifierProvider(create: (_) => ElectronicsInfoProvider()),
+        ChangeNotifierProvider(create: (_) => ElectronicsAdProvider()),
+        ChangeNotifierProvider(create: (_) => OtherServicesInfoProvider()),
+        ChangeNotifierProvider(create: (_) => OtherServicesAdProvider()),
+        ChangeNotifierProvider(create: (_) => OtherServicesDetailsProvider()),
+        ChangeNotifierProvider(create: (_) => ElectronicDetailsProvider()),
+        ChangeNotifierProvider(create: (_) => ElectronicsAdPostProvider()),
+      //  ChangeNotifierProvider(create: (_) => JobAdProvider()),
+
+    // +++ أضيفي السطر التالي +++
+    ChangeNotifierProvider(create: (_) => JobDetailsProvider()),
+
         // يمكنك إضافة أي providers مستقبلية هنا
       ],
       child: const RootApp(),

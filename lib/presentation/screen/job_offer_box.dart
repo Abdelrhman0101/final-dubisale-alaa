@@ -1,9 +1,15 @@
 import 'package:advertising_app/data/job_data_dummy.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:provider/provider.dart';
+import 'package:advertising_app/presentation/providers/job_offer_ads_provider.dart';
+import 'package:advertising_app/presentation/providers/job_info_provider.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -22,6 +28,18 @@ class _JobOfferBoxState extends State<JobOfferBox> {
   // +++ تم تحديث المتغيرات لتناسب الأنواع الجديدة للحقول +++
   List<String> _selectedCategories = [];
   List<String> _selectedSections = [];
+  bool _isPriceSortingEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // جلب بيانات عروض الوظائف عند فتح الشاشة
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<JobOfferAdsProvider>().fetchOfferAds();
+      // جلب القيم الحقيقية للاختيارات وصور الفئات من مزود معلومات الوظائف
+      context.read<JobInfoProvider>().fetchJobAdValues();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -101,27 +119,45 @@ class _JobOfferBoxState extends State<JobOfferBox> {
                                 height: 25.h,
                               ),
                               SizedBox(width: 12.w),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildMultiSelectField(
-                                        context, S.of(context).category, _selectedCategories,
-                                        const ["Engineering", "Marketing", "Medicine", "Education"],
-                                        (selection) => setState(() => _selectedCategories = selection), isFilter: true
-                                      ),
+                                  Expanded(
+                                    child: Consumer<JobInfoProvider>(
+                                      builder: (context, infoProvider, _) {
+                                        final categoryItems = infoProvider.categoryTypes;
+                                        final sectionItems = infoProvider.sectionTypes;
+                                        return Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildMultiSelectField(
+                                                context,
+                                                S.of(context).category,
+                                                _selectedCategories,
+                                                categoryItems.isNotEmpty ? categoryItems : const <String>[],
+                                                (selection) {
+                                                  setState(() => _selectedCategories = selection);
+                                                  context.read<JobOfferAdsProvider>().updateSelectedCategories(selection);
+                                                },
+                                                isFilter: true,
+                                              ),
+                                            ),
+                                            SizedBox(width: 7.w),
+                                            Expanded(
+                                              child: _buildMultiSelectField(
+                                                context,
+                                                S.of(context).section,
+                                                _selectedSections,
+                                                sectionItems.isNotEmpty ? sectionItems : const <String>[],
+                                                (selection) {
+                                                  setState(() => _selectedSections = selection);
+                                                  context.read<JobOfferAdsProvider>().updateSelectedSections(selection);
+                                                },
+                                                isFilter: true,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
-                                    SizedBox(width: 7.w),
-                                    Expanded(
-                                      child: _buildMultiSelectField(
-                                        context, S.of(context).section, _selectedSections,
-                                        const ["Full Time", "Part Time", "Remote"],
-                                        (selection) => setState(() => _selectedSections = selection), isFilter: true
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                                  ),
                             ],
                           ),
                         ),
@@ -140,13 +176,17 @@ class _JobOfferBoxState extends State<JobOfferBox> {
 
                              return Row(
                                 children: [
-                                  Text(
-                                    '${S.of(context).ad} 1000',
-                                    style: TextStyle(
-                                      fontSize: 12.sp,
-                                      color: KTextColor,
-                                      fontWeight: FontWeight.w400,
-                                    ),
+                                  Consumer<JobOfferAdsProvider>(
+                                    builder: (context, provider, _) {
+                                      return Text(
+                                        '${S.of(context).ad} ${provider.offerAds.length}',
+                                        style: TextStyle(
+                                          fontSize: 12.sp,
+                                          color: KTextColor,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      );
+                                    },
                                   ),
                                   SizedBox(width: isSmallScreen ? 40.w : 35.w),
                                   Expanded(
@@ -185,8 +225,11 @@ class _JobOfferBoxState extends State<JobOfferBox> {
                                             child: Transform.scale(
                                               scale: 0.8,
                                               child: Switch(
-                                                value: true,
-                                                onChanged: (val) {},
+                                                value: _isPriceSortingEnabled,
+                                                onChanged: (val) {
+                                                  setState(() => _isPriceSortingEnabled = val);
+                                                  // يمكن تطبيق ترتيب محلي هنا إن لزم
+                                                },
                                                 activeColor: Colors.white,
                                                 activeTrackColor:
                                                     const Color.fromRGBO(
@@ -211,94 +254,113 @@ class _JobOfferBoxState extends State<JobOfferBox> {
                     ],
                   ),
 
-                  // Grid Section - Scrollable
+                  // Grid Section - Scrollable (باستخدام بيانات المزود)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 5),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: JobDataDummy.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 6,
-                        childAspectRatio: .89,
-                      ),
-                      itemBuilder: (context, index) {
-                        final ad = JobDataDummy[index];
+                    child: Consumer<JobOfferAdsProvider>(
+                      builder: (context, provider, child) {
+                        if (provider.isLoadingOffers) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (provider.offersError != null && provider.offersError!.isNotEmpty) {
+                          return Center(child: Text('حدث خطأ: ${provider.offersError}'));
+                        }
+                        if (provider.offerAds.isEmpty) {
+                          return const Center(child: Text('لا توجد نتائج متاحة حاليًا'));
+                        }
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: Container(
-                            width: cardSize.width.w,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4.r),
-                              border: Border.all(color: Colors.grey.shade300),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.15),
-                                  blurRadius: 5.r,
-                                  offset: Offset(0, 2.h),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Stack(children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4.r),
-                                    child: Image.asset(
-                                      ad.image,
-                                      height: (cardSize.height * 0.6).h,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
+                        final ads = provider.offerAds;
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: ads.length,
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 6,
+                            childAspectRatio: .89,
+                          ),
+                          itemBuilder: (context, index) {
+                            final ad = ads[index];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              child: Container(
+                                width: cardSize.width.w,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(4.r),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.15),
+                                      blurRadius: 5.r,
+                                      offset: Offset(0, 2.h),
                                     ),
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Icon(Icons.favorite_border,
-                                        color: Colors.grey.shade300),
-                                  ),
-                                ]),
-                                Expanded(
-                                  child: Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 6.w),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        Text(ad.price, style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 12.sp)),
-                                        Text(
-                                          ad.title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor),
-                                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                                        Text(ad.contact, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor)),
-                                        Row(
-                                          children: [
-                                            SvgPicture.asset('assets/icons/Vector.svg', width: 10.5.w, height: 13.5.h),
-                                            SizedBox(width: 5),
-                                            Expanded(
-                                              child: Text(
-                                                ad.location,
-                                                style: TextStyle( fontSize: 12.sp, color: Color.fromRGBO(0, 30, 91, .75), fontWeight: FontWeight.w600),
-                                                overflow: TextOverflow.ellipsis,
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  children: [
+                                    Stack(children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4.r),
+                                        child: Builder(
+                                          builder: (context) {
+                                            final infoProvider = context.read<JobInfoProvider>();
+                                            final imageKey = (ad.categoryType?.trim().toLowerCase() == 'job offer') ? 'job_offer' : 'job_seeker';
+                                            final imagePath = infoProvider.categoryImages[imageKey] ?? '';
+                                            final imageUrl = ImageUrlHelper.getFullImageUrl(imagePath);
+                                            return CachedNetworkImage(
+                                              imageUrl: imageUrl,
+                                              height: (cardSize.height * 0.6).h,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                              placeholder: (context, url) => Container(
+                                                color: Colors.grey[300],
+                                                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                                               ),
-                                            ),
+                                              errorWidget: (context, url, error) => Image.asset(
+                                                'assets/images/jobs.jpg',
+                                                height: (cardSize.height * 0.6).h,
+                                                width: double.infinity,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      Positioned(top: 8, right: 8, child: Icon(Icons.favorite_border, color: Colors.grey.shade300)),
+                                    ]),
+                                    Expanded(
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: 6.w),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            Text("${NumberFormatter.formatPrice(ad.salary) ?? ''}", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 12.sp)),
+                                            Text(ad.job_name!, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                            Text(ad.advertiserName, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor)),
+                                            Row(children: [
+                                              SvgPicture.asset('assets/icons/Vector.svg', width: 10.5.w, height: 13.5.h),
+                                              SizedBox(width: 5),
+                                              Expanded(
+                                                child: Text(
+                                                  '${ad.emirate ?? ''} ${ad.district ?? ''}',
+                                                  style: TextStyle(fontSize: 12.sp, color: Color.fromRGBO(0, 30, 91, .75), fontWeight: FontWeight.w600),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ]),
                                           ],
                                         ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),

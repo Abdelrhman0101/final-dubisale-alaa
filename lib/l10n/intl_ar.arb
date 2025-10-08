@@ -249,7 +249,8 @@
     "add10Images": "إضافة 10 صور",
 
     "restaurantsAds": "إعلانات المطاعم",
-     "otherServicesAds": "إعلانات الخدمات الأخرى",
+    "no_restaurants_found": "لم يتم العثور على مطاعم",
+    "otherServicesAds": "إعلانات الخدمات الأخرى",
 
      "jobsAds": "إعلانات الوظائف",
     "categoryType": "نوع الفئة",

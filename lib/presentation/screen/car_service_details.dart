@@ -9,6 +9,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:readmore/readmore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:advertising_app/presentation/widget/location_map.dart';
 
 class CarServiceDetails extends StatefulWidget {
   final CarServiceModel car_service;
@@ -26,6 +30,59 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
   void initState() {
     super.initState();
     _pageController = PageController();
+  }
+
+  // Function to format price by removing decimals and adding comma separators
+  String _formatPrice(String price) {
+    try {
+      // Remove any existing decimal points and convert to integer
+      double priceValue = double.parse(price);
+      int intPrice = priceValue.toInt();
+      
+      // Add comma separators every 3 digits
+      String formattedPrice = intPrice.toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+        (Match m) => '${m[1]},',
+      );
+      
+      return formattedPrice;
+    } catch (e) {
+      // If parsing fails, return original price
+      return price;
+    }
+  }
+
+  // Function to launch WhatsApp
+  Future<void> _launchWhatsApp(String phoneNumber) async {
+    // Clean phone number by removing any non-digit characters
+    String cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // If number is empty or invalid, use a default message to open WhatsApp
+    String whatsappUrl;
+    if (cleanedNumber.isEmpty) {
+      // Open WhatsApp with invitation message
+      whatsappUrl = 'https://wa.me/?text=${Uri.encodeComponent('مرحباً، أريد التواصل معك بخصوص الخدمة المعروضة')}';
+    } else {
+      // Open WhatsApp with specific number and invitation message
+      whatsappUrl = 'https://wa.me/$cleanedNumber?text=${Uri.encodeComponent('مرحباً، أريد التواصل معك بخصوص الخدمة المعروضة')}';
+    }
+    
+    final Uri whatsappUri = Uri.parse(whatsappUrl);
+    try {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      // If WhatsApp is not installed, try to open web version
+      final Uri webWhatsappUri = Uri.parse('https://web.whatsapp.com/');
+      await launchUrl(webWhatsappUri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // Function to make phone call
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri phoneUri = Uri.parse('tel:$phoneNumber');
+    if (await canLaunchUrl(phoneUri)) {
+      await launchUrl(phoneUri);
+    }
   }
 
   @override
@@ -59,76 +116,51 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                 Stack(
                   children: [
                     SizedBox(
-                      height: 238.h,
+                      height: 290.h,
                       width: double.infinity,
-                      child: car_service.thumbnailImages.isNotEmpty
+                      // اعرض الصور بنفس منطق بطاقة البحث: PageView مع قص الحواف وصورة مغطية بعرض كامل
+                      child: (car_service.thumbnailImages.isNotEmpty || car_service.mainImage != null)
                           ? PageView.builder(
                               controller: _pageController,
-                              itemCount: car_service.thumbnailImages.length,
+                              itemCount: car_service.thumbnailImages.isNotEmpty
+                                  ? car_service.thumbnailImages.length
+                                  : 1,
                               onPageChanged: (index) =>
                                   setState(() => _currentPage = index),
-                              itemBuilder: (context, index) => Image.network(
-                                ImageUrlHelper.getFullImageUrl(car_service.thumbnailImages[index]),
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.image_not_supported,
-                                      size: 50,
-                                      color: Colors.grey,
+                              itemBuilder: (context, index) {
+                                final String imagePath = car_service.thumbnailImages.isNotEmpty
+                                    ? car_service.thumbnailImages[index]
+                                    : car_service.mainImage!;
+                                return ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                  child: CachedNetworkImage(
+                                    imageUrl: ImageUrlHelper.getFullImageUrl(imagePath),
+                                    fit: BoxFit.cover,
+                                    alignment: Alignment.topCenter,
+                                    width: double.infinity,
+                                    placeholder: (context, url) => Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2),
                                     ),
-                                  );
-                                },
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      value: loadingProgress.expectedTotalBytes != null
-                                          ? loadingProgress.cumulativeBytesLoaded /
-                                              loadingProgress.expectedTotalBytes!
-                                          : null,
-                                    ),
-                                  );
-                                },
-                              )
-                            )
-                          : car_service.mainImage != null
-                              ? Image.network(
-                                  ImageUrlHelper.getFullImageUrl(car_service.mainImage!),
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
+                                    errorWidget: (context, url, error) => Container(
                                       color: Colors.grey[300],
                                       child: const Icon(
                                         Icons.image_not_supported,
                                         size: 50,
                                         color: Colors.grey,
                                       ),
-                                    );
-                                  },
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress.expectedTotalBytes != null
-                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                loadingProgress.expectedTotalBytes!
-                                            : null,
-                                      ),
-                                    );
-                                  },
-                                )
-                              : Container(
-                                  color: Colors.grey[300],
-                                  child: const Icon(
-                                    Icons.image_not_supported,
-                                    size: 50,
-                                    color: Colors.grey,
+                                    ),
                                   ),
-                                ),
+                                );
+                              },
+                            )
+                          : Container(
+                              color: Colors.grey[300],
+                              child: const Icon(
+                                Icons.image_not_supported,
+                                size: 50,
+                                color: Colors.grey,
+                              ),
+                            ),
                     ),
                     // Back button
                     Positioned(
@@ -249,7 +281,7 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                                 ),
                                 SizedBox(width: 6.w),
                                 Text(
-                                  widget.car_service.price,
+                                  "${_formatPrice(widget.car_service.price)} AED",
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16.sp,
@@ -258,9 +290,12 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                                 ),
                                 Spacer(),
                                 Text(
-                                  widget.car_service.createdAt ?? 'N/A',
+                                  widget.car_service.createdAt?.split('T').first ??  'N/A',
                                   style: TextStyle(
-                                      color: Colors.grey, fontSize: 10.sp),
+                                    color: Colors.grey,
+                                    fontSize: 12.sp,
+                                    fontWeight: FontWeight.w400,
+                                  ),
                                 ),
                               ],
                             ),
@@ -273,51 +308,7 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                                 color: KTextColor,
                               ),
                             ),
-                            // SizedBox(height: 6.h),
-                            // RichText(
-                            //   text: TextSpan(
-                            //     children:  car_service.line1.split(' ').map((word) {
-                            //       final parts = word.split(':');
-                            //       if (parts.length == 2) {
-                            //         return TextSpan(
-                            //           text: '${parts[0]}:',
-                            //           style: TextStyle(
-                            //             fontWeight: FontWeight.w600,
-                            //             color: KTextColor,
-                            //             fontSize: 14.sp,
-                            //           ),
-                            //           children: [
-                            //             TextSpan(
-                            //               text: '${parts[1]}',
-                            //               style: TextStyle(
-                            //                 fontWeight: FontWeight.w600,
-                            //                 color: KTextColor,
-                            //                 fontSize: 16.sp,
-                            //               ),
-                            //             ),
-                            //           ],
-                            //         );
-                            //       } else {
-                            //         return TextSpan(
-                            //           text: '$word ',
-                            //           style: const TextStyle(
-                            //             color: KTextColor,
-                            //             fontSize: 16,
-                            //           ),
-                            //         );
-                            //       }
-                            //     }).toList(),
-                            //   ),
-                            // ),
-                            SizedBox(height: 6.h),
-                            Text(
-                              widget.car_service.serviceName,
-                              style: TextStyle(
-                                fontSize: 14.sp,
-                                color: KTextColor,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                            
                             SizedBox(height: 6.h),
                             Text(
                               widget.car_service.title,
@@ -326,80 +317,45 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                                 color: KTextColor,
                                 fontWeight: FontWeight.w500,
                               ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             SizedBox(height: 6.h),
-                            Row(
-                              children: [
-                                SvgPicture.asset(
-                                  'assets/icons/locationicon.svg',
-                                  width: 20.w,
-                                  height: 18.h,
-                                ),
-                                SizedBox(width: 6.w),
-                                Expanded(
-                                  child: Text(
-                                    "${widget.car_service.emirate} ${widget.car_service.district}  ${widget.car_service.area} ",
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      color: KTextColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              widget.car_service.serviceType,
+                              style: TextStyle(
+                                fontSize: 15.sp,
+                                color: KTextColor,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
+                            SizedBox(height: 6.h),
+                            // Row(
+                            //   children: [
+                            //     SvgPicture.asset(
+                            //       'assets/icons/locationicon.svg',
+                            //       width: 20.w,
+                            //       height: 18.h,
+                            //     ),
+                            //     SizedBox(width: 6.w),
+                            //     Expanded(
+                            //       child: Text(
+                            //         "${widget.car_service.emirate} ${widget.car_service.district}  ${widget.car_service.area} ",
+                            //         style: TextStyle(
+                            //           fontSize: 14.sp,
+                            //           color: KTextColor,
+                            //           fontWeight: FontWeight.w500,
+                            //         ),
+                            //       ),
+                            //     ),
+                            //   ],
+                            // ),
+                            
                             SizedBox(height: 5.h),
                           ],
                         ),
                       ),
-                      // Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
-                      // Text(
-                      //   S.of(context).car_details,
-                      //   style: TextStyle(
-                      //     fontSize: 16.sp,
-                      //     fontWeight: FontWeight.w600,
-                      //     color: KTextColor,
-                      //   ),
-                      // ),
-                      // SizedBox(height: 5.h),
-                      // GridView(
-                      //   shrinkWrap: true,
-                      //   physics: NeverScrollableScrollPhysics(),
-                      //   padding: EdgeInsets.zero,
-                      //   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      //     crossAxisCount: 2,
-                      //     mainAxisExtent:
-                      //         MediaQuery.of(context).size.height * 0.1,
-                      //     crossAxisSpacing: 30.w,
-                      //   ),
-                      //   children: [
-                      //     _buildDetailBox(
-                      //         S.of(context).car_type, widget.car_service.carType),
-                      //     _buildDetailBox(
-                      //         S.of(context).trans_type, widget.car_service.transType),
-                      //     _buildDetailBox(
-                      //         S.of(context).color, widget.car_service.color),
-                      //     _buildDetailBox(S.of(context).interior_color,
-                      //         widget.car_service.interiorColor),
-                      //     _buildDetailBox(
-                      //         S.of(context).fuel_type, widget.car_service.fuelType),
-                      //     _buildDetailBox(
-                      //         S.of(context).warranty, widget.car_service.warranty),
-                      //     _buildDetailBox(S.of(context).doors_no,
-                      //         widget.car_service.doors.toString()),
-                      //     _buildDetailBox(S.of(context).seats_no,
-                      //         widget.car_service.seats.toString()),
-                      //     _buildDetailBox(S.of(context).engine_capacity,
-                      //         widget.car_service.engineCapacity),
-                      //     _buildDetailBox(S.of(context).cylinders,
-                      //         widget.car_service.cylinders.toString()),
-                      //     _buildDetailBox(
-                      //         S.of(context).horse_power, widget.car_service.horsePower),
-                      //     _buildDetailBox(S.of(context).steering_side,
-                      //         widget.car_service.steeringSide),
-                      //   ],
-                      // ),
-                      // SizedBox(height: 1.h),
+                      
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Text(
                         S.of(context).description,
@@ -412,48 +368,32 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                       SizedBox(height: 20.h),
                       Directionality(
                         textDirection: TextDirection.ltr,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ReadMoreText(
-                               widget.car_service.description,
-                                trimLines: 2,
-                                colorClickableText:
-                                    Color.fromARGB(255, 9, 37, 108),
-                                trimMode: TrimMode.Line,
-                                trimCollapsedText: 'Read more',
-                                lessStyle: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color.fromARGB(255, 9, 37, 108),
-                                ),
-                                trimExpandedText: '  Show less',
-                                style: TextStyle(
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w500,
-                                  color: KTextColor,
-                                ),
-                                moreStyle: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color.fromARGB(255, 9, 37, 108),
-                                ),
-                              ),
-                            )
-                            // Text(
-                            //   "20 % Down Payment With Insurance\n Registration And Delivery To \n Client Without Fees",
-                            //   textAlign: TextAlign.start,
-                            //   style:
-                            // TextStyle(
-                            //     fontSize: 14.sp,
-                            //     fontWeight: FontWeight.w500,
-                            //     color: KTextColor,
-                            //   ),
-                            // ),
-                          ],
+                        child: ReadMoreText(
+                          widget.car_service.description,
+                          trimLines: 5,
+                          colorClickableText: Color.fromARGB(255, 9, 37, 108),
+                          trimMode: TrimMode.Line,
+                          trimCollapsedText: 'Read more',
+                          lessStyle: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Color.fromARGB(255, 9, 37, 108),
+                          ),
+                          trimExpandedText: '  Show less',
+                          style: TextStyle(
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w500,
+                            color: KTextColor,
+                            height: 1.4, // Reduced line height for better spacing
+                          ),
+                          moreStyle: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Color.fromARGB(255, 9, 37, 108),
+                          ),
                         ),
                       ),
-                      SizedBox(height: 50.h),
+                      SizedBox(height: 1.h), // Reduced spacing after description
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Text(
                         S.of(context).location,
@@ -488,29 +428,10 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                         ),
                       ),
                       SizedBox(height: 8.h),
-                      SizedBox(
+                      LocationMap(
+                        address: widget.car_service.location ?? '',
+                        markerTitle: widget.car_service.title,
                         height: 188.h,
-                        width: double.infinity,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/images/map.png',
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: 100.h,
-                              left: 30.w,
-                              right: 30.w,
-                              child: Icon(
-                                Icons.location_pin,
-                                color: Colors.red,
-                                size: 40.sp,
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                       SizedBox(height: 10.h),
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
@@ -533,14 +454,14 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  "Agent",
-                                  style: TextStyle(
-                                    fontSize: 16.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: KTextColor,
-                                  ),
-                                ),
+                                // Text(
+                                //   "Agent",
+                                //   style: TextStyle(
+                                //     fontSize: 16.sp,
+                                //     fontWeight: FontWeight.w600,
+                                //     color: KTextColor,
+                                //   ),
+                                // ),
                                 SizedBox(height: 2.h),
                                 Text(
                                   car_service.advertiserName,
@@ -571,9 +492,15 @@ class _CarServiceDetailsState extends State<CarServiceDetails> {
                             padding: EdgeInsets.only(top: 10.h),
                             child: Column(
                               children: [
-                                _buildActionIcon(FontAwesomeIcons.whatsapp),
+                                GestureDetector(
+                                  onTap: () => _launchWhatsApp(widget.car_service.whatsapp ?? widget.car_service.phoneNumber),
+                                  child: _buildActionIcon(FontAwesomeIcons.whatsapp),
+                                ),
                                 SizedBox(height: 5.h),
-                                _buildActionIcon(Icons.phone),
+                                GestureDetector(
+                                  onTap: () => _makePhoneCall(widget.car_service.phoneNumber),
+                                  child: _buildActionIcon(Icons.phone),
+                                ),
                               ],
                             ),
                           ),

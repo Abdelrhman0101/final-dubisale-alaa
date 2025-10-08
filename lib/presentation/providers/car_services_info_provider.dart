@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:advertising_app/data/model/car_service_filter_models.dart';
 import 'package:advertising_app/data/repository/car_services_ad_repository.dart';
 import 'package:advertising_app/data/web_services/api_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class CarServicesInfoProvider extends ChangeNotifier {
   final CarServicesAdRepository _repository;
   final ApiService _apiService; // لجلب بيانات الاتصال المشتركة
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   CarServicesInfoProvider()
       : _repository = CarServicesAdRepository(ApiService()),
@@ -62,22 +64,22 @@ class CarServicesInfoProvider extends ChangeNotifier {
   // --- دوال جلب البيانات من الـ API ---
 
   // دالة مجمعة لجلب كل البيانات اللازمة للشاشة
-  Future<void> fetchAllData({required String token}) async {
+  Future<void> fetchAllData({String? token}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
       // جلب الفلاتر الخاصة بخدمات السيارات
-      final fetchedServiceTypes = await _repository.getServiceTypes(token: token);
-      final fetchedEmirates = await _repository.getEmirates(token: token);
+      final fetchedServiceTypes = await _repository.getServiceTypes();
+      final fetchedEmirates = await _repository.getEmirates();
 
       _serviceTypes = fetchedServiceTypes;
       _emirates = fetchedEmirates;
       _buildEmirateDistrictsMap();
 
       // جلب بيانات الاتصال المشتركة
-      await fetchContactInfo(token: token);
+      await fetchContactInfo();
       
     } catch (e) {
       _error = "Failed to load data: ${e.toString()}";
@@ -89,9 +91,10 @@ class CarServicesInfoProvider extends ChangeNotifier {
   }
 
   // هذه الدالة تم نسخها كما هي من CarSalesInfoProvider لأنها مشتركة
-  Future<void> fetchContactInfo({required String token}) async {
+  Future<void> fetchContactInfo({String? token}) async {
     try {
-      final response = await _apiService.get('/api/contact-info', token: token);
+      final authToken = token ?? await _storage.read(key: 'auth_token');
+      final response = await _apiService.get('/api/contact-info', token: authToken);
       
       if (response['success'] == true && response['data'] != null) {
         final data = response['data'];
@@ -105,7 +108,7 @@ class CarServicesInfoProvider extends ChangeNotifier {
       }
     } catch (e) {
       // لا نغير حالة الخطأ العامة هنا، لأنه خطأ ثانوي
-      print("Could not fetch contact info: $e");
+      // print("Could not fetch contact info: $e");
     }
     // لا حاجة لـ notifyListeners هنا لأن fetchAllData ستقوم بذلك
   }
@@ -122,7 +125,7 @@ class CarServicesInfoProvider extends ChangeNotifier {
       
       if (response['success'] == true) {
         // أضف العنصر محليًا وجدد البيانات من الـ API لضمان التوافق
-        await fetchContactInfo(token: token);
+        await fetchContactInfo();
         notifyListeners();
         return true;
       } else {
@@ -238,15 +241,15 @@ class CarServicesInfoProvider extends ChangeNotifier {
   }
 
   // --- دوال جلب البيانات ---
-  Future<void> fetchLandingPageData({required String token}) async {
+  Future<void> fetchLandingPageData({String? token}) async {
     _isLoadingFilters = true;
     _isLoadingTopGarages = true;
     notifyListeners();
 
     try {
       // جلب الفلاتر
-      final fetchedServiceTypes = await _repository.getServiceTypes(token: token);
-      final fetchedEmirates = await _repository.getEmirates(token: token);
+      final fetchedServiceTypes = await _repository.getServiceTypes();
+      final fetchedEmirates = await _repository.getEmirates();
       _serviceTypes = fetchedServiceTypes;
       _emirates = fetchedEmirates;
       _buildEmirateDistrictsMap(); // بناء خريطة الإمارات والمناطق
@@ -260,7 +263,7 @@ class CarServicesInfoProvider extends ChangeNotifier {
 
     try {
       // جلب أفضل الكراجات مع فلترة حسب الـ category
-      _topGarages = await _repository.getTopGarages(token: token, category: 'car_services');
+      _topGarages = await _repository.getTopGarages(category: 'car_services');
       _topGaragesError = null;
     } catch (e) {
       _topGaragesError = e.toString();

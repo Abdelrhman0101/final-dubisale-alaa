@@ -11,7 +11,7 @@ class CarServicesAdRepository {
   CarServicesAdRepository(this._apiService);
 
   // دالة لجلب أنواع الخدمات من الـ API
-  Future<List<ServiceTypeModel>> getServiceTypes({required String token}) async {
+  Future<List<ServiceTypeModel>> getServiceTypes({String? token}) async {
     final response = await _apiService.get('/api/car-services/filters', token: token);
 
     // الـ API يرسل الأنواع داخل مفتاح "service_types"
@@ -24,7 +24,7 @@ class CarServicesAdRepository {
   }
 
   // دالة لجلب الإمارات والمناطق التابعة لها
-  Future<List<EmirateModel>> getEmirates({required String token}) async {
+  Future<List<EmirateModel>> getEmirates({String? token}) async {
     final response = await _apiService.get('/api/locations/emirates', token: token);
 
     // الـ API يرسل الإمارات داخل مفتاح "emirates"
@@ -88,7 +88,6 @@ class CarServicesAdRepository {
         token: token,
       );
     } catch (e) {
-      print('Error creating car service ad: $e');
       // إعادة رمي الخطأ مع رسالة أوضح
       if (e.toString().contains('500')) {
         throw Exception('حدث خطأ في الخادم، يرجى المحاولة مرة أخرى لاحقاً');
@@ -103,7 +102,7 @@ class CarServicesAdRepository {
   }
 
  Future<CarServiceAdResponse> getCarServiceAds({
-    required String token,
+    String? token,
     Map<String, dynamic>? query, // سيستخدم للفلترة لاحقًا
   }) async {
      final endpoint = (query != null && query.isNotEmpty) ? '/api/car-services/search' : '/api/car-services';
@@ -121,15 +120,14 @@ class CarServicesAdRepository {
   }
 
 
-Future<List<BestAdvertiser>> getTopGarages({required String token, String? category}) async {
-  // استخدام الـ category كـ query parameter بدلاً من جزء من الـ endpoint
+Future<List<BestAdvertiser>> getTopGarages({String? token, String? category}) async {
+  // استخدام الـ category في الـ endpoint مباشرة بدلاً من query parameter
   String endpoint = '/api/best-advertisers';
-  Map<String, dynamic>? query;
   if (category != null) {
-    query = {'category': category};
+    endpoint = '/api/best-advertisers/$category';
   }
   
-  final response = await _apiService.get(endpoint, token: token, query: query);
+  final response = await _apiService.get(endpoint);
   
   if (response is List) {
     // استخدام الـ filterByCategory في الـ fromJson مباشرة
@@ -151,7 +149,7 @@ Future<List<BestAdvertiser>> getTopGarages({required String token, String? categ
 }
 
 // جلب إعلانات صندوق العروض مع فلاتر اختيارية
-Future<List<CarServiceModel>> getOfferAds({required String token, Map<String, String>? filters}) async {
+Future<List<CarServiceModel>> getOfferAds({String? token, Map<String, String>? filters}) async {
   try {
     String endpoint = '/api/car-services/offers-box/ads';
     
@@ -161,7 +159,7 @@ Future<List<CarServiceModel>> getOfferAds({required String token, Map<String, St
       queryParams = Map<String, dynamic>.from(filters);
     }
     
-    final response = await _apiService.get(endpoint, token: token, query: queryParams);
+    final response = await _apiService.get(endpoint, query: queryParams);
     
     if (response is List) {
       return response.map((json) => CarServiceModel.fromJson(json)).toList();

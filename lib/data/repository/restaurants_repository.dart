@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:advertising_app/data/model/car_service_filter_models.dart'; // لإعادة استخدام EmirateModel
 import 'package:advertising_app/data/model/restaurant_ad_model.dart';
 import 'package:advertising_app/data/model/restaurant_models.dart';
+import 'package:advertising_app/data/model/best_advertiser_model.dart';
 import 'package:advertising_app/data/web_services/api_service.dart';
 
 class RestaurantsRepository {
@@ -11,7 +12,7 @@ class RestaurantsRepository {
   RestaurantsRepository(this._apiService);
 
   // دالة لجلب فئات المطاعم من الـ API
-  Future<List<RestaurantCategoryModel>> getRestaurantCategories({required String token}) async {
+  Future<List<RestaurantCategoryModel>> getRestaurantCategories({String? token}) async {
     final response = await _apiService.get('/api/restaurant-categories', token: token);
 
     // نفترض أن الـ API يرجع قائمة مباشرة أو داخل مفتاح "data" أو "categories"
@@ -29,7 +30,7 @@ class RestaurantsRepository {
   }
 
   // دالة لجلب الإمارات (مُعادة الاستخدام من الأقسام الأخرى)
-  Future<List<EmirateModel>> getEmirates({required String token}) async {
+  Future<List<EmirateModel>> getEmirates({String? token}) async {
     final response = await _apiService.get('/api/locations/emirates', token: token);
     if (response is Map<String, dynamic> && response.containsKey('emirates')) {
       final List<dynamic> emiratesJson = response['emirates'];
@@ -40,7 +41,7 @@ class RestaurantsRepository {
 
   // دالة لجلب المطاعم مع الفلاتر
   Future<List<dynamic>> getRestaurants({
-    required String token,
+    String? token,
     String? emirate,
     String? district,
     String? category,
@@ -105,13 +106,17 @@ class RestaurantsRepository {
     required String phoneNumber,
     String? whatsappNumber,
     required String address,
-    required File mainImage,
+    File? mainImage,
     required List<File> thumbnailImages,
     // بيانات الخطة
     required String planType,
     required int planDays,
     required String planExpiresAt,
   }) async {
+    // التحقق من وجود الصورة الرئيسية
+    if (mainImage == null) {
+      throw Exception('الصورة الرئيسية مطلوبة لإنشاء إعلان المطعم');
+    }
 
     final Map<String, dynamic> textData = {
       'title': title,
@@ -139,7 +144,7 @@ class RestaurantsRepository {
     );
   }
 
-  Future<RestaurantAdModel> getRestaurantAdDetails({required int adId, required String token}) async {
+  Future<RestaurantAdModel> getRestaurantAdDetails({required int adId, String? token}) async {
     final response = await _apiService.get('/api/restaurants/$adId', token: token);
     
     if (response is Map<String, dynamic>) {
@@ -152,6 +157,107 @@ class RestaurantsRepository {
     }
     
     throw Exception('API response format is not as expected for RestaurantAdModel.');
+  }
+
+  // دالة لجلب أفضل المعلنين للمطاعم
+  Future<List<BestAdvertiser>> getTopRestaurants({String? token, String? category}) async {
+    // استخدام الـ category كجزء من الـ endpoint بدلاً من query parameter
+    String endpoint = '/api/best-advertisers';
+    if (category != null && category.isNotEmpty) {
+      endpoint = '/api/best-advertisers/$category';
+    }
+    
+    final response = await _apiService.get(endpoint, token: token);
+    
+    if (response is List) {
+      // معالجة الاستجابة كقائمة مباشرة مع البنية الجديدة
+      List<BestAdvertiser> advertisers = [];
+      
+      for (var json in response) {
+        if (json is Map<String, dynamic>) {
+          // إنشاء BestAdvertiser من البيانات الجديدة
+          final advertiser = BestAdvertiser(
+            id: json['id'] ?? 0,
+            name: json['advertiser_name'] ?? 'Unknown Advertiser',
+            ads: [],
+          );
+          
+          // معالجة latest_ads
+          if (json['latest_ads'] is List) {
+            List<BestAdvertiserAd> ads = [];
+            String advertiserCategory = json['category']?.toString() ?? '';
+            
+            for (var adJson in json['latest_ads']) {
+              if (adJson is Map<String, dynamic>) {
+                // إضافة معلومات المعلن للإعلان
+                adJson['advertiser_id'] = advertiser.id;
+                adJson['advertiser_name'] = advertiser.name;
+                // إضافة فئة المعلن للإعلان
+                adJson['category'] = advertiserCategory;
+                
+                final ad = BestAdvertiserAd.fromJson(
+                  adJson, 
+                  advertiserId: advertiser.id, 
+                  advertiserName: advertiser.name
+                );
+                ads.add(ad);
+              }
+            }
+            advertiser.ads.addAll(ads);
+          }
+          
+          if (advertiser.ads.isNotEmpty) {
+            advertisers.add(advertiser);
+          }
+        }
+      }
+      
+      return advertisers;
+    } 
+    else if (response is Map<String, dynamic> && response['data'] is List) {
+      // معالجة الاستجابة من مصفوفة البيانات
+      List<BestAdvertiser> advertisers = [];
+      
+      for (var json in response['data']) {
+        if (json is Map<String, dynamic>) {
+          final advertiser = BestAdvertiser(
+            id: json['id'] ?? 0,
+            name: json['advertiser_name'] ?? 'Unknown Advertiser',
+            ads: [],
+          );
+          
+          if (json['latest_ads'] is List) {
+            List<BestAdvertiserAd> ads = [];
+            String advertiserCategory = json['category']?.toString() ?? '';
+            
+            for (var adJson in json['latest_ads']) {
+              if (adJson is Map<String, dynamic>) {
+                adJson['advertiser_id'] = advertiser.id;
+                adJson['advertiser_name'] = advertiser.name;
+                // إضافة فئة المعلن للإعلان
+                adJson['category'] = advertiserCategory;
+                
+                final ad = BestAdvertiserAd.fromJson(
+                  adJson, 
+                  advertiserId: advertiser.id, 
+                  advertiserName: advertiser.name
+                );
+                ads.add(ad);
+              }
+            }
+            advertiser.ads.addAll(ads);
+          }
+          
+          if (advertiser.ads.isNotEmpty) {
+            advertisers.add(advertiser);
+          }
+        }
+      }
+      
+      return advertisers;
+    }
+    
+    throw Exception('Failed to parse Top Restaurants list from API response.');
   }
 }
 

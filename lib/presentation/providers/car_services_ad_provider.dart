@@ -45,7 +45,7 @@ Future<bool> submitCarServiceAd(Map<String, dynamic> adData) async {
         whatsapp: adData['whatsapp'],
         location: adData['advertiser_location'],
         mainImage: adData['mainImage'],
-        thumbnailImages: (adData['thumbnail_images_urls'] as List<File>?) != null && (adData['thumbnail_images_urls'] as List<File>).isNotEmpty ? adData['thumbnail_images_urls'] : null,
+        thumbnailImages: (adData['thumbnailImages'] as List<File>?) != null && (adData['thumbnailImages'] as List<File>).isNotEmpty ? adData['thumbnailImages'] : null,
         
         // ++ أهم جزء: تمرير بيانات الخطة التي كانت مفقودة ++
         planType: adData['planType'],
@@ -58,7 +58,7 @@ Future<bool> submitCarServiceAd(Map<String, dynamic> adData) async {
       return true;
 
     } catch (e) {
-      print('CarServicesAdProvider Error: $e');
+      // print('CarServicesAdProvider Error: $e');
       _error = e.toString();
       _isSubmitting = false;
       notifyListeners();

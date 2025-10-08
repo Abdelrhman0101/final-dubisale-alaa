@@ -1,6 +1,8 @@
 import 'package:advertising_app/constant/string.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/providers/car_services_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/car_rent_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_ad_provider.dart';
 import 'package:advertising_app/presentation/widget/custom_button.dart';
 import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurants_ad_provider.dart';
@@ -28,6 +30,17 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
   void initState() {
     super.initState();
     _loadSettings();
+    
+    // طباعة البيانات المستلمة في Console
+    if (widget.adData != null) {
+      print('=== البيانات المستلمة في صفحة اختيار الخطة ===');
+      widget.adData!.forEach((key, value) {
+        print('$key: $value');
+      });
+      print('=======================================');
+    } else {
+      print('تحذير: لا توجد بيانات إعلان مرسلة!');
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -40,6 +53,76 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
         });
       }
     });
+  }
+
+  void _showFreeAdNotEligibleDialog() {
+    final isArabic = Localizations.localeOf(context).languageCode == 'ar';
+    final settingsProvider = context.read<SettingsProvider>();
+    final maxFreePrice = settingsProvider.systemSettings?.maxPriceFreeAdCarsSales ?? 120000;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Directionality(
+          textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.r),
+            ),
+            title: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: KTextColor,
+                  size: 24.sp,
+                ),
+                SizedBox(width: 8.w),
+                Text(
+                  isArabic ? 'تنبيه' : 'Warning',
+                  style: TextStyle(
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.bold,
+                    color: KTextColor,
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              isArabic
+                  ? 'الإعلان المجاني متاح فقط للسيارات بسعر أقل من ${maxFreePrice.toStringAsFixed(0)} درهم. يرجى اختيار خطة أخرى.'
+                  : 'Free ads are only available for cars priced under ${maxFreePrice.toStringAsFixed(0)} AED. Please choose another plan.',
+              style: TextStyle(
+                fontSize: 16.sp,
+                color: Colors.grey[700],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  backgroundColor: KTextColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8.r),
+                  ),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                  child: Text(
+                    isArabic ? 'حسناً' : 'OK',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
 
@@ -74,31 +157,45 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
 
       if (adType == 'car_sale') {
         final provider = context.read<CarAdProvider>();
-        success = await provider.submitCarAd(
-          widget.adData!, // المعامل الأول المطلوب
-          // نمرر البيانات من الـ map هنا
-          title: widget.adData!['title'], description: widget.adData!['description'], make: widget.adData!['make'], model: widget.adData!['model'],
-          trim: widget.adData!['trim'], year: widget.adData!['year'], km: widget.adData!['km'], price: widget.adData!['price'],
-          specs: widget.adData!['specs'], carType: widget.adData!['carType'], transType: widget.adData!['transType'], fuelType: widget.adData!['fuelType'],
-          color: widget.adData!['color'], interiorColor: widget.adData!['interiorColor'], warranty: widget.adData!['warranty'],
-          engineCapacity: widget.adData!['engineCapacity'], cylinders: widget.adData!['cylinders'], horsepower: widget.adData!['horsepower'],
-          doorsNo: widget.adData!['doorsNo'], seatsNo: widget.adData!['seatsNo'], steeringSide: widget.adData!['steeringSide'],
-          advertiserName: widget.adData!['advertiserName'], phoneNumber: widget.adData!['phoneNumber'], whatsapp: widget.adData!['whatsapp'],
-          emirate: widget.adData!['emirate'], area: widget.adData!['area'], advertiserType: widget.adData!['advertiverType'],
-          mainImage: widget.adData!['mainImage'], thumbnailImages: widget.adData!['thumbnailImages'],
-          // تمرير بيانات الخطة
-          planType: widget.adData!['planType'], planDays: widget.adData!['planDays'], planExpiresAt: widget.adData!['planExpiresAt'],
-        );
-        submissionError = provider.createAdError;
+        success = await provider.submitCarAd(widget.adData!);
+        submissionError = provider.submitAdError;
 
       } else if (adType == 'car_service') {
         final provider = context.read<CarServicesAdProvider>();
         success = await provider.submitCarServiceAd(widget.adData!);
         submissionError = provider.error;
+      } else if (adType == 'car_rent') {
+        print('=== Submitting Car Rent Ad ===');
+        print('Ad Data before submission: ${widget.adData}');
+        print('Plan Type: ${widget.adData!['planType']}');
+        print('Plan Days: ${widget.adData!['planDays']}');
+        print('Plan Expires At: ${widget.adData!['planExpiresAt']}');
+        
+        final provider = context.read<CarRentAdProvider>();
+        success = await provider.submitCarRentAd(widget.adData!);
+        submissionError = provider.createAdError;
+        
+        print('Submission result: $success');
+        print('Submission error: $submissionError');
+        print('=== Car Rent Ad Submission Complete ===');
       } else if (adType == 'restaurant') {
         final provider = context.read<RestaurantsAdProvider>();
         success = await provider.submitRestaurantAd(widget.adData!);
         submissionError = provider.error;
+      } else if (adType == 'real_estate') {
+        print('=== Submitting Real Estate Ad ===');
+        print('Ad Data before submission: ${widget.adData}');
+        print('Plan Type: ${widget.adData!['planType']}');
+        print('Plan Days: ${widget.adData!['planDays']}');
+        print('Plan Expires At: ${widget.adData!['planExpiresAt']}');
+        
+        final provider = context.read<RealEstateAdProvider>();
+        success = await provider.submitRealEstateAd(widget.adData!);
+        submissionError = provider.error;
+        
+        print('Submission result: $success');
+        print('Submission error: $submissionError');
+        print('=== Real Estate Ad Submission Complete ===');
       }
 
       if (!mounted) return;
@@ -121,123 +218,11 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
     }
 }
 
-  // دالة إرسال الإعلان مع نوع الإعلان المحدد
-  // Future<void> _submitAdWithType() async {
-  //   if (widget.adData == null) {
-  //     ScaffoldMessenger.of(context).showSnackBar(
-  //       const SnackBar(
-  //         content: Text('لا توجد بيانات إعلان لإرسالها'),
-  //         backgroundColor: Colors.red,
-  //       ),
-  //     );
-  //     return;
-  //   }
 
-  //   setState(() {
-  //     _isSubmitting = true;
-  //   });
-
-  //   try {
-  //     final provider = context.read<CarAdProvider>();
-  //     final adOptions = _getAdOptions();
-  //     final selectedAdOption = adOptions[selectedOption];
-      
-  //     // حساب تاريخ انتهاء الباقة
-  //     final now = DateTime.now();
-  //     final expiresAt = now.add(Duration(days: selectedAdOption.duration));
-  //     final planExpiresAtString = expiresAt.toIso8601String();
-      
-  //     // تحديد نوع الباقة بناءً على العنوان
-  //     String planType;
-  //     if (selectedAdOption.title.contains('⭐')) {
-  //       planType = 'premium_star';
-  //     } else if (selectedAdOption.title.toLowerCase().contains('premium')) {
-  //       planType = 'premium';
-  //     } else if (selectedAdOption.title.toLowerCase().contains('featured')) {
-  //       planType = 'featured';
-  //     } else {
-  //       planType = 'free';
-  //     }
-      
-  //     final success = await provider.submitCarAd(
-  //       title: widget.adData!['title'],
-  //       description: widget.adData!['description'],
-  //       make: widget.adData!['make'],
-  //       model: widget.adData!['model'],
-  //       trim: widget.adData!['trim'],
-  //       year: widget.adData!['year'],
-  //       km: widget.adData!['km'],
-  //       price: widget.adData!['price'],
-  //       specs: widget.adData!['specs'],
-  //       carType: widget.adData!['carType'],
-  //       transType: widget.adData!['transType'],
-  //       fuelType: widget.adData!['fuelType'],
-  //       color: widget.adData!['color'],
-  //       interiorColor: widget.adData!['interiorColor'],
-  //       warranty: widget.adData!['warranty'],
-  //       engineCapacity: widget.adData!['engineCapacity'],
-  //       cylinders: widget.adData!['cylinders'],
-  //       horsepower: widget.adData!['horsepower'],
-  //       doorsNo: widget.adData!['doorsNo'],
-  //       seatsNo: widget.adData!['seatsNo'],
-  //       steeringSide: widget.adData!['steeringSide'],
-  //       advertiserName: widget.adData!['advertiserName'],
-  //       phoneNumber: widget.adData!['phoneNumber'],
-  //       whatsapp: widget.adData!['whatsapp'],
-  //       emirate: widget.adData!['emirate'],
-  //       area: widget.adData!['area'],
-  //       advertiserType: widget.adData!['advertiserType'],
-  //       mainImage: widget.adData!['mainImage'],
-  //       thumbnailImages: widget.adData!['thumbnailImages'],
-  //       planType: planType,
-  //       planDays: selectedAdOption.duration,
-  //       planExpiresAt: planExpiresAtString,
-  //     );
-
-  //     if (!mounted) return;
-      
-  //     if (success) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(
-  //           content: Text('تم نشر الإعلان بنجاح!'),
-  //           backgroundColor: Colors.green,
-  //         ),
-  //       );
-  //       // العودة إلى الصفحة الرئيسية مع إرسال إشارة النجاح
-  //       context.pop('success');
-  //     } else {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(
-  //           content: Text(provider.createAdError ?? 'فشل في نشر الإعلان'),
-  //           backgroundColor: Colors.red,
-  //         ),
-  //       );
-  //     }
-  //   } catch (e) {
-  //     if (mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(
-  //           content: Text('حدث خطأ: $e'),
-  //           backgroundColor: Colors.red,
-  //         ),
-  //       );
-  //     }
-  //   } finally {
-  //     if (mounted) {
-  //       setState(() {
-  //         _isSubmitting = false;
-  //       });
-  //     }
-  //   }
-  // }
 
   List<AdOption> _getAdOptions() {
     final s = S.of(context);
     final settingsProvider = context.read<SettingsProvider>();
-    
-    // Check if free ad is eligible based on car price
-    final carPrice = double.tryParse(widget.adData?['price']?.toString() ?? '0') ?? 0;
-    final isFreeAdEligible = settingsProvider.canPostFreeAd(carPrice);
     
     List<AdOption> options = [
       AdOption(
@@ -273,23 +258,17 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
           s.daily_refresh,
         ],
       ),
+      AdOption(
+        title: s.free,
+        price: '0',
+        duration: settingsProvider.getFreeAdCycleDays(),
+        labelColor: Colors.grey,
+        features: [
+          s.appearance_after_featured,
+          s.daily_refresh,
+        ],
+      ),
     ];
-    
-    // Add free option only if eligible
-    if (isFreeAdEligible) {
-      options.add(
-        AdOption(
-          title: s.free,
-          price: '0',
-          duration: settingsProvider.getFreeAdCycleDays(),
-          labelColor: Colors.grey,
-          features: [
-            s.appearance_after_featured,
-            s.daily_refresh,
-          ],
-        ),
-      );
-    }
     
     return options;
   }
@@ -374,38 +353,6 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
               ),
             ),
             SizedBox(height: 5.h),
-            // Show message if free ad is not eligible
-            if (!isFreeAdEligible && maxFreePrice > 0)
-              Container(
-                margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  border: Border.all(color: Colors.orange.shade300),
-                  borderRadius: BorderRadius.circular(8.r),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.orange.shade700,
-                      size: 20.sp,
-                    ),
-                    SizedBox(width: 8.w),
-                    Expanded(
-                      child: Text(
-                        isArabic
-                            ? 'الإعلان المجاني متاح فقط للسيارات بسعر أقل من ${maxFreePrice.toStringAsFixed(0)} درهم'
-                            : 'Free ads are only available for cars priced under ${maxFreePrice.toStringAsFixed(0)} AED',
-                        style: TextStyle(
-                          fontSize: 14.sp,
-                          color: Colors.orange.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             Expanded(
               child: ListView.separated(
                 padding: EdgeInsets.symmetric(horizontal: 16),
@@ -447,9 +394,23 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
                                 : null,
                           ),
                           child: GestureDetector(
-                            onTap: () => setState(() {
-                              selectedOption = index;
-                            }),
+                            onTap: () {
+                              // Check if trying to select free option (index 3) and not eligible
+                              if (index == 3) {
+                                final settingsProvider = context.read<SettingsProvider>();
+                                final carPrice = double.tryParse(widget.adData?['price']?.toString() ?? '0') ?? 0;
+                                final isFreeAdEligible = settingsProvider.canPostFreeAd(carPrice);
+                                
+                                if (!isFreeAdEligible) {
+                                  _showFreeAdNotEligibleDialog();
+                                  return;
+                                }
+                              }
+                              
+                              setState(() {
+                                selectedOption = index;
+                              });
+                            },
                             child: Row(
                               children: [
                                 Radio<int>(
@@ -457,9 +418,23 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
                                   groupValue: selectedOption,
                                   activeColor: index == 3 ? KTextColor : Color.fromRGBO(245, 247, 250, 1),
                                   focusColor: option.labelColor,
-                                  onChanged: (val) => setState(() {
-                                    selectedOption = val!;
-                                  }),
+                                  onChanged: (val) {
+                                    // Check if trying to select free option (index 3) and not eligible
+                                    if (val == 3) {
+                                      final settingsProvider = context.read<SettingsProvider>();
+                                      final carPrice = double.tryParse(widget.adData?['price']?.toString() ?? '0') ?? 0;
+                                      final isFreeAdEligible = settingsProvider.canPostFreeAd(carPrice);
+                                      
+                                      if (!isFreeAdEligible) {
+                                        _showFreeAdNotEligibleDialog();
+                                        return;
+                                      }
+                                    }
+                                    
+                                    setState(() {
+                                      selectedOption = val!;
+                                    });
+                                  },
                                 ),
                                 Text(
                                   option.title,

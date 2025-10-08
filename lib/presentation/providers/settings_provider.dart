@@ -26,7 +26,7 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final settingsData = await _settingsRepository.getSystemSettings(token: token);
+      final settingsData = await _settingsRepository.getSystemSettings();
       _systemSettings = SystemSettings(settingsData);
     } catch (e) {
       _error = e.toString();

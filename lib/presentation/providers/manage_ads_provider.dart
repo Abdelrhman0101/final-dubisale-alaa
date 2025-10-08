@@ -46,7 +46,7 @@ class MyAdsProvider with ChangeNotifier {
         throw Exception('User is not authenticated.');
       }
       
-      final response = await _myAdsRepository.getMyAds(token: token);
+      final response = await _myAdsRepository.getMyAds();
       _allAds = response.ads;
       
       // إعادة تطبيق الفلتر الحالي
@@ -187,7 +187,17 @@ class MyAdsProvider with ChangeNotifier {
 
     try {
       final token = await const FlutterSecureStorage().read(key: 'auth_token');
-      if (token == null) throw Exception('Token not found');
+      if (token == null) {
+        _activationError = 'Authentication token not found. Please login again.';
+        return false;
+      }
+      
+      print('=== ACTIVATING OFFER DEBUG ===');
+      print('Ad ID: $adId');
+      print('Category Slug: $categorySlug');
+      print('Days: $days');
+      print('Token: ${token.substring(0, 20)}...');
+      print('=============================');
       
       await _myAdsRepository.activateOffer(
         token: token,
@@ -196,13 +206,37 @@ class MyAdsProvider with ChangeNotifier {
         days: days,
       );
       
+      print('=== OFFER ACTIVATION SUCCESS ===');
+      print('Ad $adId activated successfully');
+      print('===============================');
+      
       // بعد النجاح، يمكنك إعادة تحميل الإعلانات لتحديث حالتها
       await fetchMyAds();
       return true;
 
     } catch (e) {
-      _activationError = e.toString();
-      if (kDebugMode) print("Error activating offer: $e");
+      // معالجة أفضل لرسائل الخطأ
+      String errorMessage = e.toString();
+      
+      // إذا كان الخطأ يحتوي على معلومات عن category_slug غير صحيح
+      if (errorMessage.contains('category_slug') || errorMessage.contains('invalid')) {
+        _activationError = 'فئة الإعلان غير صحيحة. يرجى المحاولة مرة أخرى.';
+      } else if (errorMessage.contains('full') || errorMessage.contains('max')) {
+        _activationError = 'صندوق العروض ممتلئ حالياً. يرجى المحاولة لاحقاً.';
+      } else if (errorMessage.contains('already')) {
+        _activationError = 'هذا الإعلان موجود بالفعل في صندوق العروض.';
+      } else if (errorMessage.contains('Unauthorized') || errorMessage.contains('403')) {
+        _activationError = 'ليس لديك صلاحية لتفعيل هذا الإعلان.';
+      } else if (errorMessage.contains('not found') || errorMessage.contains('404')) {
+        _activationError = 'الإعلان غير موجود.';
+      } else {
+        _activationError = 'حدث خطأ أثناء تفعيل الإعلان. يرجى المحاولة مرة أخرى.';
+      }
+      
+      print('=== OFFER ACTIVATION ERROR ===');
+      print('Original Error: $e');
+      print('User-friendly Error: $_activationError');
+      print('=============================');
       return false;
     } finally {
       _isActivatingOffer = false;

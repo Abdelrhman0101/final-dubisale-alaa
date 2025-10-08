@@ -9,7 +9,9 @@ class NumberFormatter {
       // إزالة أي فواصل موجودة مسبقاً والمسافات
       numberStr = number.replaceAll(RegExp(r'[,\s]'), '');
       // التحقق من أن النص يحتوي على أرقام فقط (مع دعم الأرقام العشرية)
-      if (!RegExp(r'^\d*\.?\d*$').hasMatch(numberStr) || numberStr.isEmpty) {
+      // تحسين regex للتعامل مع الأسعار بشكل أفضل - يقبل 0, 0.00, 100, 100.50 إلخ
+      final regexMatch = RegExp(r'^\d*(\.\d+)?$').hasMatch(numberStr) && numberStr != '.' && numberStr.isNotEmpty;
+      if (!regexMatch) {
         return '0'; // إرجاع 0 إذا لم يكن رقماً صحيحاً
       }
     } else {

@@ -31,10 +31,10 @@ class CarServicesProvider extends ChangeNotifier {
     
     if (initialFilters != null) {
       finalFilters.addAll(initialFilters);
-      print('=== APPLY AND FETCH DEBUG ===');
-      print('Initial filters received: $initialFilters');
-      print('Final filters to be sent: $finalFilters');
-      print('=============================');
+      // print('=== APPLY AND FETCH DEBUG ===');
+      // print('Initial filters received: $initialFilters');
+      // print('Final filters to be sent: $finalFilters');
+      // print('=============================');
     }
     
     await fetchAds(filters: finalFilters);
@@ -69,9 +69,7 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
     notifyListeners();
     
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) throw Exception('Authentication token not found');
-
+      // Public data - no token required for browsing car service ads
       // فصل فلاتر الـ API عن الفلاتر المحلية
       Map<String, dynamic>? apiFilters;
       Map<String, String>? localFilters;
@@ -81,8 +79,8 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
         localFilters = {};
         
         filters.forEach((key, value) {
-          if (key == 'service_name') {
-            // فلتر service_name يتم تطبيقه محلياً
+          if (key == 'service_name' || key == 'district') {
+            // فلتر service_name و district يتم تطبيقهما محلياً
             localFilters![key] = value;
           } else {
             // باقي الفلاتر ترسل للـ API
@@ -90,14 +88,13 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
           }
         });
         
-        print('=== SEARCH FILTERS DEBUG ===');
-        print('API Filters: $apiFilters');
-        print('Local Filters: $localFilters');
-        print('============================');
+        // print('=== SEARCH FILTERS DEBUG ===');
+        // print('API Filters: $apiFilters');
+        // print('Local Filters: $localFilters');
+        // print('============================');
       }
 
       final response = await _repository.getCarServiceAds(
-        token: token, 
         query: apiFilters?.isNotEmpty == true ? apiFilters : null
       );
       
@@ -116,9 +113,9 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
 
     } catch (e) {
       _error = e.toString();
-      print('=== FETCH ADS ERROR ===');
-      print('Error: $e');
-      print('======================');
+      // print('=== FETCH ADS ERROR ===');
+      // print('Error: $e');
+      // print('======================');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -133,6 +130,15 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
       final selectedServiceNames = filters['service_name']!.split(',');
       filteredAds = filteredAds.where((ad) {
         return selectedServiceNames.contains(ad.serviceName);
+      }).toList();
+    }
+    
+    // فلتر district
+    if (filters.containsKey('district')) {
+      final selectedDistricts = filters['district']!.split(',');
+      filteredAds = filteredAds.where((ad) {
+        return selectedDistricts.any((district) => 
+            ad.district?.toLowerCase().contains(district.toLowerCase()) == true);
       }).toList();
     }
     
@@ -166,8 +172,15 @@ Future<void> fetchAds({Map<String, String>? filters}) async {
   
   /// تحديث نطاق السعر وتطبيق الفلتر محلياً
   void updatePriceRange(String? from, String? to) {
-    priceFrom = from;
-    priceTo = to;
+    priceFrom = (from == null || from.isEmpty) ? null : from.replaceAll(RegExp(r'[^0-9.]'), '');
+    priceTo = (to == null || to.isEmpty) ? null : to.replaceAll(RegExp(r'[^0-9.]'), '');
+    _performLocalFilter();
+  }
+  
+  /// مسح فلاتر السعر
+  void clearPriceFilters() {
+    priceFrom = null;
+    priceTo = null;
     _performLocalFilter();
   }
   

@@ -54,11 +54,9 @@ class RestaurantAdProvider with ChangeNotifier {
     safeNotifyListeners();
     
     try {
-      final token = await _storage.read(key: 'auth_token') ?? '';
-      
+      // Public data - no token required for browsing restaurant ads
       // جلب البيانات من API
       final restaurants = await _restaurantsInfoProvider.fetchRestaurants(
-        token: token,
         emirate: 'All',
         district: _selectedDistricts.isEmpty ? 'All' : _selectedDistricts.first,
         category: _selectedCategories.isEmpty ? 'All' : _selectedCategories.first,
@@ -68,8 +66,47 @@ class RestaurantAdProvider with ChangeNotifier {
       
       _rawRestaurantData = restaurants;
       
+      // Debug: طباعة بيانات المطاعم الخام
+      // // print('=== DEBUG: بيانات المطاعم الخام ===');
+      // // print('عدد المطاعم المستلمة: ${restaurants.length}');
+      for (int i = 0; i < restaurants.length && i < 3; i++) {
+        final restaurant = restaurants[i];
+        // // print('--- مطعم ${i + 1} ---');
+        // // print('ID: ${restaurant['id']}');
+        // // print('Title: ${restaurant['title']}');
+        // // print('Main Image: ${restaurant['main_image']}');
+        // // print('Emirate: ${restaurant['emirate']}');
+        // // print('District: ${restaurant['district']}');
+        // // print('Category: ${restaurant['category']}');
+        // // print('Price Range: ${restaurant['price_range']}');
+        // // print('Phone: ${restaurant['phone_number']}');
+        // // print('Plan Type: ${restaurant['plan_type']}');
+        // // print('Status: ${restaurant['add_status']}');
+        // // print('Created At: ${restaurant['created_at']}');
+        // // print('Raw Data: $restaurant');
+        // // print('---');
+      }
+      // // print('=== نهاية DEBUG ===');
+      
       // تحويل البيانات إلى FavoriteItemInterface
       _restaurantAds = _convertApiDataToFavoriteItems(restaurants);
+      
+      // Debug: طباعة البيانات المحولة
+      // // print('=== DEBUG: البيانات المحولة ===');
+      // // print('عدد المطاعم المحولة: ${_restaurantAds.length}');
+      for (int i = 0; i < _restaurantAds.length && i < 3; i++) {
+        final item = _restaurantAds[i];
+        // // print('--- مطعم محول ${i + 1} ---');
+        // // print('Title: ${item.title}');
+        // // print('Images: ${item.images}');
+        // // print('Location: ${item.location}');
+        // // print('Price: ${item.price}');
+        // // print('Details: ${item.details}');
+        // // print('Contact: ${item.contact}');
+        // // print('Is Premium: ${item.isPremium}');
+        // // print('---');
+      }
+      // // print('=== نهاية DEBUG المحولة ===');
       
     } catch (e) {
       _loadAdsError = e.toString();
@@ -82,27 +119,29 @@ class RestaurantAdProvider with ChangeNotifier {
   
   // --- تحويل البيانات من API إلى FavoriteItemInterface ---
   List<FavoriteItemInterface> _convertApiDataToFavoriteItems(List<dynamic> apiData) {
-    const String baseUrl = 'https://dubaisale.ae/storage/';
+    const String baseUrl = 'https://dubaisale.app/storage/';
     
     return apiData.map((restaurant) {
       final planType = _nullToString(restaurant['plan_type']);
       
       // بناء رابط الصورة الرئيسية - إضافة timestamp لتجنب الكاش
-      String mainImageUrl = 'nullnow';
+      // لا نُدرج قيمة وهمية عندما لا توجد صورة
+      String mainImageUrl = '';
       if (restaurant['main_image'] != null && restaurant['main_image'].toString().isNotEmpty) {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         mainImageUrl = baseUrl + restaurant['main_image'].toString() + '?t=$timestamp';
       }
       
       // بناء قائمة الصور المصغرة - إضافة timestamp لتجنب الكاش
-      List<String> thumbnailImages = ['nullnow'];
+      // عند عدم توفر صور، نُبقي القائمة فارغة بدون صورة افتراضية
+      List<String> thumbnailImages = [];
       if (restaurant['thumbnail_images'] != null && restaurant['thumbnail_images'] is List) {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         thumbnailImages = (restaurant['thumbnail_images'] as List)
             .where((img) => img != null && img.toString().isNotEmpty)
             .map((img) => baseUrl + img.toString() + '?t=$timestamp')
             .toList();
-        if (thumbnailImages.isEmpty) thumbnailImages = ['nullnow'];
+        // إذا كانت القائمة فارغة بعد المعالجة، نتركها فارغة
       }
       
       // بناء نص الموقع من emirate/district/area
@@ -126,7 +165,9 @@ class RestaurantAdProvider with ChangeNotifier {
         imageUrl: mainImageUrl,
         location: locationText,
         phoneNumber: _nullToString(restaurant['phone_number']),
-        whatsapp: _nullToString(restaurant['whatsapp']),
+        // بعض الـ endpoints تُرجع الحقل باسم "whatsapp_number" بدلًا من "whatsapp"
+        // نعتمد كلا الاسمين لضمان التوافق مع البيانات القادمة من الـ API
+        whatsapp: _nullToString(restaurant['whatsapp_number'] ?? restaurant['whatsapp']),
         priority: _getPriorityFromPlanType(planType),
         createdAt: _nullToString(restaurant['created_at']),
         category: _nullToString(restaurant['category']),
@@ -136,7 +177,11 @@ class RestaurantAdProvider with ChangeNotifier {
         contact: _nullToString(restaurant['advertiser_name']),
         date: _formatDateOnly(restaurant['created_at']),
         details: _nullToString(restaurant['category']),
-        images: [mainImageUrl, ...thumbnailImages],
+        // لا نضيف صورًا وهمية؛ إذا لم توجد صور تبقى القائمة فارغة
+        images: [
+          ...(mainImageUrl.isNotEmpty ? [mainImageUrl] : []),
+          ...thumbnailImages,
+        ],
         isPremium: planType.toLowerCase().contains('premium'),
         line1: _nullToString(restaurant['title']),
       );
@@ -198,14 +243,76 @@ class RestaurantAdProvider with ChangeNotifier {
   void updatePriceRange(String? from, String? to) {
     _priceFrom = from;
     _priceTo = to;
-    safeNotifyListeners();
-    // Apply filters immediately when price range changes
-    applyFilters(
-      selectedDistricts: selectedDistricts,
-      selectedCategories: selectedCategories,
-    );
+    _performLocalFilter(); // استخدام الفلترة المحلية بدلاً من استدعاء API
   }
   
+  // --- دالة الفلترة المحلية (مثل car_sales_ad_provider) ---
+  void _performLocalFilter() {
+    if (_rawRestaurantData.isEmpty) {
+      // إذا لم تكن هناك بيانات محملة، قم بجلبها أولاً
+      applyAndFetchAds();
+      return;
+    }
+    
+    // تحويل البيانات الخام إلى FavoriteItemInterface
+    List<FavoriteItemInterface> allItems = _convertApiDataToFavoriteItems(_rawRestaurantData);
+    List<FavoriteItemInterface> filteredItems = allItems;
+    
+    // فلتر السعر محلياً
+    if (_priceFrom != null || _priceTo != null) {
+      filteredItems = filteredItems.where((item) {
+        if (item is RestaurantAdItem) {
+          // استخراج السعر من النص (مثل "50-100 AED" أو "100 AED")
+          final priceText = item.price.replaceAll(RegExp(r'[^0-9.-]'), '');
+          final prices = priceText.split('-');
+          
+          if (prices.isNotEmpty) {
+            final minPrice = double.tryParse(prices[0]) ?? 0;
+            final maxPrice = prices.length > 1 ? (double.tryParse(prices[1]) ?? minPrice) : minPrice;
+            
+            // تطبيق فلتر السعر الأدنى
+            if (_priceFrom != null) {
+              final fromPrice = double.tryParse(_priceFrom!.replaceAll(',', '')) ?? 0;
+              if (maxPrice < fromPrice) return false;
+            }
+            
+            // تطبيق فلتر السعر الأعلى
+            if (_priceTo != null) {
+              final toPrice = double.tryParse(_priceTo!.replaceAll(',', '')) ?? double.infinity;
+              if (minPrice > toPrice) return false;
+            }
+          }
+        }
+        return true;
+      }).toList();
+    }
+    
+    // فلتر المناطق - إذا كان هناك مناطق مختارة وليست "All"
+    if (_selectedDistricts.isNotEmpty && !_selectedDistricts.contains('All')) {
+      filteredItems = filteredItems.where((item) {
+        if (item is RestaurantAdItem) {
+          return _selectedDistricts.any((district) => 
+              item.district.toLowerCase().contains(district.toLowerCase()));
+        }
+        return false;
+      }).toList();
+    }
+    
+    // فلتر الفئات - إذا كان هناك فئات مختارة وليست "All"
+    if (_selectedCategories.isNotEmpty && !_selectedCategories.contains('All')) {
+      filteredItems = filteredItems.where((item) {
+        if (item is RestaurantAdItem) {
+          return _selectedCategories.any((category) => 
+              item.category.toLowerCase().contains(category.toLowerCase()));
+        }
+        return false;
+      }).toList();
+    }
+    
+    _restaurantAds = filteredItems;
+    safeNotifyListeners();
+  }
+
   // --- تطبيق الفلاتر ---
   Future<void> applyFilters({
     List<String>? selectedDistricts,
@@ -216,28 +323,12 @@ class RestaurantAdProvider with ChangeNotifier {
     safeNotifyListeners();
     
     try {
-      final token = await _storage.read(key: 'auth_token') ?? '';
-      
-      // تحديد القيم للفلاتر
-      String districtValue = district ?? 'All';
-      String categoryValue = category ?? 'All';
-      String emirateValue = emirate ?? 'All';
-      
-      // إذا لم يتم تمرير المعاملات المباشرة، استخدم القوائم
-      if (district == null && selectedDistricts != null && selectedDistricts.isNotEmpty && !selectedDistricts.contains('All')) {
-        districtValue = selectedDistricts.first;
-      }
-      
-      if (category == null && selectedCategories != null && selectedCategories.isNotEmpty && !selectedCategories.contains('All')) {
-        categoryValue = selectedCategories.first;
-      }
-      
-      // جلب البيانات من API مع الفلاتر
+      // Public data - no token required for browsing restaurant ads
+      // جلب جميع البيانات أولاً بدون فلاتر محددة
       final restaurants = await _restaurantsInfoProvider.fetchRestaurants(
-        token: token,
-        emirate: emirateValue,
-        district: districtValue,
-        category: categoryValue,
+        emirate: emirate ?? 'All',
+        district: district ?? 'All',
+        category: category ?? 'All',
         priceFrom: _priceFrom,
         priceTo: _priceTo,
       );
@@ -245,7 +336,34 @@ class RestaurantAdProvider with ChangeNotifier {
       _rawRestaurantData = restaurants;
       
       // تحويل البيانات إلى FavoriteItemInterface
-      _restaurantAds = _convertApiDataToFavoriteItems(restaurants);
+      List<FavoriteItemInterface> allItems = _convertApiDataToFavoriteItems(restaurants);
+      
+      // تطبيق الفلترة المحلية للفئات والمناطق المتعددة
+      List<FavoriteItemInterface> filteredItems = allItems;
+      
+      // فلتر المناطق - إذا كان هناك مناطق مختارة وليست "All"
+      if (selectedDistricts != null && selectedDistricts.isNotEmpty && !selectedDistricts.contains('All')) {
+        filteredItems = filteredItems.where((item) {
+          if (item is RestaurantAdItem) {
+            return selectedDistricts.any((district) => 
+                item.district.toLowerCase().contains(district.toLowerCase()));
+          }
+          return false;
+        }).toList();
+      }
+      
+      // فلتر الفئات - إذا كان هناك فئات مختارة وليست "All"
+      if (selectedCategories != null && selectedCategories.isNotEmpty && !selectedCategories.contains('All')) {
+        filteredItems = filteredItems.where((item) {
+          if (item is RestaurantAdItem) {
+            return selectedCategories.any((category) => 
+                item.category.toLowerCase().contains(category.toLowerCase()));
+          }
+          return false;
+        }).toList();
+      }
+      
+      _restaurantAds = filteredItems;
       
     } catch (e) {
       _loadAdsError = e.toString();

@@ -1,5 +1,6 @@
 import 'package:advertising_app/data/model/car_ad_model.dart';
 import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
@@ -28,6 +29,28 @@ class _OffersBoxScreenState extends State<OffersBoxScreen> {
   void initState() {
     super.initState();
     _refreshData();
+  }
+
+  Widget _buildSimpleLoadingGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      itemCount: 6,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.75,
+      ),
+      itemBuilder: (context, index) => Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -75,19 +98,13 @@ class _OffersBoxScreenState extends State<OffersBoxScreen> {
                     child: RefreshIndicator(
                       onRefresh: _refreshData,
                       child: provider.isLoadingOffers &&
-                              provider.offerAds.isEmpty
-                          ? const Center(child: CircularProgressIndicator())
-                          : provider.offersError != null
-                              ? Center(
-                                  child: Text(
-                                      "An error occurred: ${provider.offersError}"))
-                              : provider.offerAds.isEmpty
-                                  ? const Center(
-                                      child: Padding(
-                                          padding: EdgeInsets.all(50),
-                                          child: Text(
-                                              "No offers available at the moment.")))
-                                  : GridView.builder(
+                            provider.offerAds.isEmpty
+                        ? _buildSimpleLoadingGrid()
+                        : provider.offersError != null
+                            ? Center(child: Text("خطأ: ${provider.offersError}"))
+                            : provider.offerAds.isEmpty
+                                ? Center(child: Text("لا توجد عروض متاحة"))
+                                : GridView.builder(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 8.0),
                                       itemCount: provider.offerAds.length,
@@ -280,28 +297,20 @@ class _OffersBoxScreenState extends State<OffersBoxScreen> {
               Stack(
                 children:[ ClipRRect(
                   borderRadius: BorderRadius.vertical(top: Radius.circular(4.r)),
-                  child: Image.network(
-                    ImageUrlHelper.getFullImageUrl(car.mainImage),
+                  child: CachedNetworkImage(
+                    imageUrl: ImageUrlHelper.getFullImageUrl(car.mainImage),
                     height: (cardSize.height * 0.55).h,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        height: (cardSize.height * 0.55).h,
-                        width: double.infinity,
-                        color: Colors.grey[200],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
-                          ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (c, e, s) => Container(
+                    placeholder: (context, url) => Container(
+                      height: (cardSize.height * 0.55).h,
+                      width: double.infinity,
+                      color: Colors.grey[200],
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
                      height: (cardSize.height * 0.6).h,
                       width: double.infinity,
                       color: Colors.grey[200],
@@ -606,4 +615,8 @@ class __RangeSelectionBottomSheetState
       ),
     );
   }
+
+
+
+
 }

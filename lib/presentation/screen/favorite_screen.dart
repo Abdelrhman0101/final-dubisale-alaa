@@ -89,7 +89,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
       textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
             child: Scaffold(
         backgroundColor: Colors.white,
-        bottomNavigationBar: CustomBottomNav(currentIndex: 1),
+       // bottomNavigationBar: CustomBottomNav(currentIndex: 1),
         // appBar: AppBar(
         //   title: 
         //   Text(
@@ -144,6 +144,8 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                   : ListView.builder(
                       padding: const EdgeInsets.only(top: 5, bottom: 10),
                       itemCount: selectedItems.length,
+                      itemExtent: 120.h, // تحديد ارتفاع ثابت للعناصر لتحسين الأداء
+                      cacheExtent: 500.0, // تحسين التخزين المؤقت
                       itemBuilder: (context, index) {
                         final item = selectedItems[index];
                         // تم تعديل هذا الجزء

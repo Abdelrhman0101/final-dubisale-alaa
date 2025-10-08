@@ -10,8 +10,10 @@ import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:advertising_app/constant/string.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 
@@ -79,14 +81,41 @@ class _EditProfileState extends State<EditProfile> {
       final address = await _storage.read(key: 'user_address');
       
       if (latitude != null && longitude != null && address != null) {
+        final location = LatLng(double.parse(latitude), double.parse(longitude));
         setState(() {
-          _userLocation = LatLng(double.parse(latitude), double.parse(longitude));
+          _userLocation = location;
           _userAddress = address;
         });
+        
+        // Move camera to the saved location after map is ready
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final mapsProvider = context.read<GoogleMapsProvider>();
+          // Wait for map controller to be ready
+          await _waitForMapController(mapsProvider);
+          if (mapsProvider.mapController != null) {
+            await mapsProvider.moveCameraToLocation(
+              location.latitude, 
+              location.longitude,
+              zoom: 15.0
+            );
+          }
+        });
+        
         print('Location loaded from secure storage: $address');
       }
     } catch (e) {
       print('Error loading location from storage: $e');
+    }
+  }
+
+  // Helper method to wait for map controller to be ready
+  Future<void> _waitForMapController(GoogleMapsProvider mapsProvider) async {
+    int attempts = 0;
+    const maxAttempts = 20; // Wait up to 2 seconds (20 * 100ms)
+    
+    while (mapsProvider.mapController == null && attempts < maxAttempts) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
     }
   }
 
@@ -138,15 +167,29 @@ class _EditProfileState extends State<EditProfile> {
       _advertiserNameController.text = user.advertiserName ?? '';
       _advertiserTypeController.text = user.advertiserType ?? '';
       _passwordController.text = "••••••••"; // Placeholder for password
-      if (user.advertiserLogo != null && user.advertiserLogo!.isNotEmpty) {
-        _logoImageFile = File(user.advertiserLogo!);
-      }
+      // advertiser_logo is a relative path from API, not a local file path
+      // _logoImageFile should only be set when user selects a new image
       
       // Update location data from user model if available
       if (user.latitude != null && user.longitude != null) {
+        final location = LatLng(user.latitude!, user.longitude!);
         setState(() {
-          _userLocation = LatLng(user.latitude!, user.longitude!);
+          _userLocation = location;
           _userAddress = user.advertiserLocation ?? user.address ?? 'Unknown location';
+        });
+        
+        // Move camera to the user's location from database after map is ready
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final mapsProvider = context.read<GoogleMapsProvider>();
+          // Wait for map controller to be ready
+          await _waitForMapController(mapsProvider);
+          if (mapsProvider.mapController != null) {
+            await mapsProvider.moveCameraToLocation(
+              location.latitude, 
+              location.longitude,
+              zoom: 15.0
+            );
+          }
         });
       } else if (user.advertiserLocation != null && user.advertiserLocation!.isNotEmpty) {
         setState(() {
@@ -154,6 +197,8 @@ class _EditProfileState extends State<EditProfile> {
         });
       }
     }
+
+    
   }
 
   // Opens the image gallery to pick a logo and upload it
@@ -268,7 +313,7 @@ class _EditProfileState extends State<EditProfile> {
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 8),
-              Text('تم حفظ الموقع بنجاح!'),
+              Text("Location saved successfully!"),
             ],
           ),
           backgroundColor: Colors.green,
@@ -638,28 +683,65 @@ class _EditProfileState extends State<EditProfile> {
                               ),
                             ),
                             const SizedBox(height: 10),
-
+                            
+                            _buildLabel("User Id"),
+                            _buildEditableField(_userNameController, () => context.push('/profile')),
+                            
                             // Display-only fields
                             _buildLabel(S.of(context).userName),
                             _buildEditableField(_userNameController, () => context.push('/profile')),
                             
                             _buildLabel(S.of(context).phone),
-                            _buildPhoneField(_phoneController, () => context.push('/profile')),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildPhoneField(_phoneController, () => context.push('/profile')),
+                                ),
+                                const SizedBox(width: 8),
+                                Consumer<AuthProvider>(
+                                  builder: (context, authProvider, child) {
+                                    // إظهار زر التحقق فقط إذا كان verify_account = false
+                                    if (authProvider.verifyAccount == false) {
+                                      return ElevatedButton(
+                                        onPressed: () => context.push('/phonecode'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF01547E),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                    child: const Text(
+                                          'Verify',
+                                          style: TextStyle(color: Colors.white, fontSize: 12),
+                                        ),
+                                      );
+                                    }
+                                    // إظهار أيقونة التحقق إذا كان verify_account = true
+                                    return const Icon(
+                                      Icons.verified,
+                                      color: Colors.green,
+                                      size: 24,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
                             
-                            _buildLabel(S.of(context).whatsApp),
+                            _buildLabel(S.of(context).referralCode),
                             _buildPhoneField(_whatsAppController, () => context.push('/profile')),
                             
-                            _buildLabel(S.of(context).password),
-                            _buildEditableField(_passwordController, () => context.push('/profile'), isPassword: true),
+                            // _buildLabel(S.of(context).password),
+                            // _buildEditableField(_passwordController, () => context.push('/profile'), isPassword: true),
                             
-                            _buildLabel(S.of(context).email),
-                            _buildEditableField(_emailController, () => context.push('/profile')),
+                            // _buildLabel(S.of(context).email),
+                            // _buildEditableField(_emailController, () => context.push('/profile')),
                             
-                            _buildLabel(S.of(context).advertiserName),
-                            _buildEditableField(_advertiserNameController, () => context.push('/profile')),
+                            // _buildLabel(S.of(context).advertiserName),
+                            // _buildEditableField(_advertiserNameController, () => context.push('/profile')),
                             
-                            _buildLabel(S.of(context).advertiserType),
-                            _buildEditableField(_advertiserTypeController, () => context.push('/profile')),
+                            // _buildLabel(S.of(context).advertiserType),
+                            // _buildEditableField(_advertiserTypeController, () => context.push('/profile')),
                             
                             // Interactive Logo Section
                             _buildLabel(S.of(context).advertiserLogo),
@@ -674,9 +756,17 @@ class _EditProfileState extends State<EditProfile> {
                             
                             Text(S.of(context).advertiserLocation, style: TextStyle(color: KTextColor, fontSize: 16.sp, fontWeight: FontWeight.w500)),
                             const SizedBox(height: 5),
+                            
+                            // MODIFICATION 1: Display prompt if location is not set
                             Text(
-                              _userAddress ?? S.of(context).address,
-                              style: TextStyle(color: KTextColor, fontSize: 16.sp, fontWeight: FontWeight.w500),
+                              (_userAddress == null || _userAddress!.isEmpty)
+                                  ?"You haven't location yet,select it."
+                                  : _userAddress!,
+                              style: TextStyle(
+                                color:  KTextColor,
+                                fontSize: 16.sp,
+                                fontWeight: FontWeight.w500
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 5),
@@ -701,31 +791,6 @@ class _EditProfileState extends State<EditProfile> {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            // Go to Car Sales Ads button
-                            // SizedBox(
-                            //   width: double.infinity,
-                            //   child: ElevatedButton(
-                            //     onPressed: () {
-                            //       // تمرير بيانات الموقع إلى car_sales_ads_screen
-                            //       String route = '/car_sales_ads';
-                            //       if (_userAddress != null && _userLocation != null) {
-                            //         route += '?location=${Uri.encodeComponent(_userAddress!)}&lat=${_userLocation!.latitude}&lng=${_userLocation!.longitude}';
-                            //       }
-                            //       context.push(route);
-                            //     },
-                            //     style: ElevatedButton.styleFrom(
-                            //       backgroundColor: const Color.fromRGBO(8, 194, 201, 1),
-                            //       foregroundColor: Colors.white,
-                            //       padding: const EdgeInsets.symmetric(vertical: 12),
-                            //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            //       textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
-                            //     ),
-                            //     child: const Text('Go to Car Sales Ads'),
-                            //   ),
-                            // ),
-                           
-                           
-                           
                           ],
                         ),
                       ),
@@ -779,9 +844,15 @@ class _EditProfileState extends State<EditProfile> {
             child: _logoImageFile != null
                 ? Image.file(_logoImageFile!, fit: BoxFit.cover)
                 : (user?.advertiserLogo != null && user!.advertiserLogo!.isNotEmpty
-                    ? Image.network(user.advertiserLogo!, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) {
-                        return const Center(child: Icon(Icons.broken_image, size: 50, color: Colors.grey));
-                      })
+                    ? CachedNetworkImage(
+                        imageUrl: ImageUrlHelper.getFullImageUrl(user.advertiserLogo!),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[300],
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        ),
+                        errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, size: 50, color: Colors.grey)),
+                      )
                     : const Center(child: Icon(Icons.person, size: 50, color: Colors.grey))),
           ),
           // A semi-transparent overlay to make buttons more visible
@@ -948,6 +1019,7 @@ class _EditProfileState extends State<EditProfile> {
                     color: Color(0xFF01547E),
                   ),
                 )
+              // MODIFICATION 2: Changed the placeholder for when no location is selected
               : _userLocation == null
                   ? Stack(
                       children: [
@@ -957,20 +1029,23 @@ class _EditProfileState extends State<EditProfile> {
                             borderRadius: BorderRadius.circular(12),
                             child: Container(
                               color: Colors.grey[100],
-                              child: const Center(
+                              child: Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
-                                      Icons.location_off,
+                                      Icons.location_off_outlined,
                                       size: 48,
-                                      color: Colors.grey,
+                                      color: Colors.grey[400],
                                     ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Press "Locate Me" to set your location',
-                                      style: TextStyle(color: Colors.grey, fontSize: 14),
-                                      textAlign: TextAlign.center,
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                                      child: Text(
+                                        'لم يتم تحديد الموقع، اضغط على "حدد موقعي" أو اختر من الخريطة',
+                                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                                        textAlign: TextAlign.center,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -980,84 +1055,53 @@ class _EditProfileState extends State<EditProfile> {
                         ),
                         // Buttons at the bottom
                         Positioned(
-                          bottom: 2,
+                          bottom: 16,
                           left: 16,
                           right: 16,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
                             children: [
-                              Row(
-                                children: [
-                                  // Locate Me button
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      icon: _isLoadingLocation 
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                            ),
-                                          )
-                                        : const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
-                                      label: Text(
-                                        _isLoadingLocation ? 'جاري التحديد...' : s.locateMe,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
-                                      ),
-                                      onPressed: _isLoadingLocation ? null : () async {
-                                        await _getCurrentLocation();
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: _isLoadingLocation ? Colors.grey : const Color(0xFF01547E),
-                                        minimumSize: const Size(0, 40),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                    ),
+                              // Locate Me button
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: _isLoadingLocation 
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(Icons.my_location, color: Colors.white, size: 20),
+                                  label: Text(
+                                    _isLoadingLocation ? 'loading..' : s.locateMe,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
                                   ),
-                                  const SizedBox(width: 8),
-                                  // Open Google Map button
-                                  Expanded(
-                                    child: 
-                                    ElevatedButton.icon(
-                                  icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
-                                  label: const Text(
-                                    "Open Google Map",
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
-                                  ),
-                                  onPressed: () async {
-                                    await _navigateToLocationPicker();
-                                  },
+                                  onPressed: _isLoadingLocation ? null : _getCurrentLocation,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF01547E),
+                                    backgroundColor: _isLoadingLocation ? Colors.grey : const Color(0xFF01547E),
                                     minimumSize: const Size(0, 40),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
                                 ),
-                            ),
-                                ],
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(width: 8),
                               // Location Picker button
-                              // SizedBox(
-                              //   width: double.infinity,
-                              //   child: 
-                              //   ElevatedButton.icon(
-                              //     icon: const Icon(Icons.place, color: Colors.white, size: 20),
-                              //     label: const Text(
-                              //       'اختيار الموقع من الخريطة',
-                              //       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
-                              //     ),
-                              //     onPressed: () async {
-                              //       await _navigateToLocationPicker();
-                              //     },
-                              //     style: ElevatedButton.styleFrom(
-                              //       backgroundColor: const Color(0xFF4CAF50),
-                              //       minimumSize: const Size(0, 40),
-                              //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              //     ),
-                              //   ),
-                              // ),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.map_rounded, color: Colors.white, size: 20),
+                                  label: const Text(
+                                    "open google map",
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+                                  ),
+                                  onPressed: _navigateToLocationPicker,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF01547E), // Green color for contrast
+                                    minimumSize: const Size(0, 40),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1143,75 +1187,41 @@ class _EditProfileState extends State<EditProfile> {
                           bottom: 16,
                           left: 16,
                           right: 16,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
                             children: [
-                              Row(
-                                children: [
-                                  // Locate Me button
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
-                                      label: Text(
-                                        s.locateMe,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
-                                      ),
-                                      onPressed: () async {
-                                        await _getCurrentLocation();
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF01547E),
-                                        minimumSize: const Size(0, 40),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                    ),
+                              // Locate Me button
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.my_location, color: Colors.white, size: 20),
+                                  label: Text(
+                                    s.locateMe,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
                                   ),
-                                  const SizedBox(width: 8),
-                                  // Open Google Map button
-                                  Expanded(
-                                    child:
-                                   
-
-                                     ElevatedButton.icon(
-                                  icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
-                                  label: const Text(
-                                    "Open Google Map",
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
-                                  ),
-                                  onPressed: () async {
-                                    await _navigateToLocationPicker();
-                                  },
+                                  onPressed: _getCurrentLocation,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF01547E),
                                     minimumSize: const Size(0, 40),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
                                 ),
-                                  ),
-                                ],
                               ),
-                              const SizedBox(height: 8),
-                              // Location Picker button
-                              // SizedBox(
-                              //   width: double.infinity,
-                              //   child: ElevatedButton.icon(
-                              //     icon: const Icon(Icons.place, color: Colors.white, size: 20),
-                              //     label: const Text(
-                              //       'اختيار الموقع من الخريطة',
-                              //       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
-                              //     ),
-                              //     onPressed: () async {
-                              //       await _navigateToLocationPicker();
-                              //     },
-                              //     style: ElevatedButton.styleFrom(
-                              //       backgroundColor: const Color(0xFF4CAF50),
-                              //       minimumSize: const Size(0, 40),
-                              //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              //     ),
-                              //   ),
-                              // ),
-                           
-                           
+                              const SizedBox(width: 8),
+                              // Open Location Picker button
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.map_outlined, color: Colors.white, size: 20),
+                                  label: const Text(
+                                    "open google map",
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+                                  ),
+                                  onPressed: _navigateToLocationPicker,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:  const Color(0xFF01547E),
+                                    minimumSize: const Size(0, 40),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1221,4 +1231,6 @@ class _EditProfileState extends State<EditProfile> {
       },
     );
   }
+
+  // تم إلغاء دالة _convertToAdvertiser من شاشة الملف الشخصي
 }

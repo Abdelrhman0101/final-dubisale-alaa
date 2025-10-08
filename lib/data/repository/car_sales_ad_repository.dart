@@ -12,13 +12,10 @@ class CarAdRepository {
   CarAdRepository(this._apiService);
 
   // --- تم تحديث نوع الإرجاع (Return Type) للدالة ---
- Future<CarAdResponse> getCarAds({required String token, Map<String, dynamic>? query}) async {
-    // طباعة تشخيصية فقط في وضع التطوير
-    if (kDebugMode) {
-      print("Fetching Car Ads with query: $query");
-    }
+ Future<CarAdResponse> getCarAds({String? token, Map<String, dynamic>? query}) async {
+    // Fetching car ads with query parameters
 
-    final response = await _apiService.get('/api/car-sales-ads', token: token, query: query);
+    final response = await _apiService.get('/api/car-sales-ads', query: query);
     
     if (response is Map<String, dynamic>) {
       return CarAdResponse.fromJson(response);
@@ -110,27 +107,19 @@ class CarAdRepository {
    // في ملف: data/repository/car_sales_ad_repository.dart
 
   // --- استبدل الدالة القديمة بهذه الدالة المحدثة ---
-  Future<CarAdModel> getCarAdDetails({required int adId, required String token}) async {
+  Future<CarAdModel> getCarAdDetails({required int adId, String? token}) async {
     final response = await _apiService.get('/api/car-sales-ads/$adId', token: token);
     
-    // هذا السطر مهم جدًا لنرى بنية الرد في الـ Console
-    print('----------- RAW API RESPONSE FOR AD DETAILS -----------');
-    print(response);
-
-    // نتأكد أن الرد هو من نوع Map
+    // Parse API response for car ad details
     if (response is Map<String, dynamic>) {
       
-      // الحالة الأولى: إذا كان الـ API يرسل الرد داخل مفتاح "data"
-      // مثال: {"data": { ...ad details... }}
+      // Case 1: API response wrapped in "data" key
       if (response.containsKey('data') && response['data'] is Map<String, dynamic>) {
-        print('API Response is wrapped in "data" key. Parsing from "data"...');
         return CarAdModel.fromJson(response['data']);
       }
       
-      // الحالة الثانية: إذا كان الـ API يرسل تفاصيل الإعلان مباشرة
-      // مثال: { ...ad details... }
+      // Case 2: Direct API response object
       else {
-        print('API Response is a direct object. Parsing directly...');
         return CarAdModel.fromJson(response);
       }
     }
@@ -169,9 +158,8 @@ class CarAdRepository {
   }
 
 
-
-  Future<List<MakeModel>> getMakes({required String token}) async {
-    final response = await _apiService.get('/api/filters/car-sale/makes', token: token);
+  Future<List<MakeModel>> getMakes({String? token}) async {
+    final response = await _apiService.get('/api/filters/car-sale/makes');
     
     if (response is List) {
       return response.map((make) => MakeModel.fromJson(make)).toList();
@@ -184,27 +172,9 @@ class CarAdRepository {
     throw Exception('Failed to parse Makes list.');
   }
   
-  // +++ دالة جديدة لجلب كل الـ Models التابعة لـ make معين +++
-  //  Future<List<CarModel>> getModels({required int makeId, required String token}) async {
-  //   // استخدمنا الرابط الديناميكي الصحيح
-  //   final response = await _apiService.get('/api/filters/car-sale/makes/$makeId/models', token: token);
-    
-  //   if (response is List) {
-  //     return response.map((model) => CarModel.fromJson(model)).toList();
-  //   }
-  //   else if (response is Map<String, dynamic> && response['data'] is List) {
-  //      return (response['data'] as List).map((model) => CarModel.fromJson(model)).toList();
-  //   }
-    
-  //   throw Exception('Failed to parse Models list from API.');
-  // }
 
-
-
-   Future<List<TrimModel>> getTrims({required int modelId, required String token}) async {
-    final response = await _apiService.get('/api/filters/car-sale/models/$modelId/trims', token: token);
-    
-    if (kDebugMode) print('RAW API RESPONSE FOR TRIMS (Model ID: $modelId): $response');
+   Future<List<TrimModel>> getTrims({required int modelId, String? token}) async {
+    final response = await _apiService.get('/api/filters/car-sale/models/$modelId/trims');
     
     // الحالة الأولى: إذا كان الرد قائمة مباشرة
     if (response is List) {
@@ -219,10 +189,8 @@ class CarAdRepository {
   }
   
   // --- +++ دالة getModels المعدلة كإجراء وقائي بنفس المنطق +++ ---
-  Future<List<CarModel>> getModels({required int makeId, required String token}) async {
-    final response = await _apiService.get('/api/filters/car-sale/makes/$makeId/models', token: token);
-    
-    if (kDebugMode) print('RAW API RESPONSE FOR MODELS (Make ID: $makeId): $response');
+  Future<List<CarModel>> getModels({required int makeId, String? token}) async {
+    final response = await _apiService.get('/api/filters/car-sale/makes/$makeId/models');
     
     // الحالة الأولى: إذا كان الرد قائمة مباشرة
     if (response is List) {
@@ -236,15 +204,31 @@ class CarAdRepository {
     throw Exception('Failed to parse Models list. API response is in an unexpected format.');
   }
 
-
-  Future<List<BestAdvertiser>> getBestAdvertiserAds({required String token, String? category}) async {
-    String endpoint = '/api/best-advertisers';
-    Map<String, dynamic>? query;
-    if (category != null) {
-      query = {'category': category};
+  // --- +++ دالة جديدة لجلب جميع الـ models بدون تحديد make +++ ---
+  Future<List<CarModel>> getAllModels({String? token}) async {
+    final response = await _apiService.get('/api/filters/car-sale/models', token: token);
+    
+    // الحالة الأولى: إذا كان الرد قائمة مباشرة
+    if (response is List) {
+      return response.map((model) => CarModel.fromJson(model)).toList();
+    }
+    // الحالة الثانية: إذا كان الرد مغلفًا بـ "data"
+    else if (response is Map<String, dynamic> && response['data'] is List) {
+       return (response['data'] as List).map((model) => CarModel.fromJson(model)).toList();
     }
     
-    final response = await _apiService.get(endpoint, token: token, query: query);
+    throw Exception('Failed to parse All Models list. API response is in an unexpected format.');
+  }
+
+
+  Future<List<BestAdvertiser>> getBestAdvertiserAds({String? token, String? category}) async {
+    // استخدام الـ endpoint الجديد مع الكاتجوري في المسار
+    String endpoint = '/api/best-advertisers';
+    if (category != null) {
+      endpoint = '/api/best-advertisers/$category';
+    }
+    
+    final response = await _apiService.get(endpoint, token: token);
     
     // الرد هو قائمة مباشرة
     if (response is List) {
@@ -262,8 +246,8 @@ class CarAdRepository {
     throw Exception('Failed to parse Best Advertiser Ads: Expected a List.');
 }
 
-Future<List<CarAdModel>> getOfferAds({required String token}) async {
-    final response = await _apiService.get('/api/offers-box/car_sales', token: token);
+Future<List<CarAdModel>> getOfferAds({String? token}) async {
+    final response = await _apiService.get('/api/offers-box/car_sales');
     
     // API العروض غالبًا ما يرسل قائمة مباشرة
     if (response is List) {
@@ -280,10 +264,9 @@ Future<List<CarAdModel>> getOfferAds({required String token}) async {
   /// Get car makes and models from API
   Future<Map<String, dynamic>?> getCarMakesAndModels({String? token}) async {
     try {
-      final response = await _apiService.get('/api/car-makes-models', token: token);
+      final response = await _apiService.get('/api/car-makes-models');
       return response as Map<String, dynamic>?;
     } catch (e) {
-      if (kDebugMode) print('Error fetching car makes and models: $e');
       return null;
     }
   }
@@ -291,10 +274,9 @@ Future<List<CarAdModel>> getOfferAds({required String token}) async {
   /// Get car specifications from API
   Future<Map<String, dynamic>?> getCarSpecs({String? token}) async {
     try {
-      final response = await _apiService.get('/api/car-specs', token: token);
+      final response = await _apiService.get('/api/car-specs');
       return response as Map<String, dynamic>?;
     } catch (e) {
-      if (kDebugMode) print('Error fetching car specs: $e');
       return null;
     }
   }

@@ -12,6 +12,7 @@ class UserModel {
   final double? longitude;
   final String? address;
   final String? advertiserLocation;
+  final String? userType; // إضافة حقل userType
 
   UserModel({
     required this.id,
@@ -27,6 +28,7 @@ class UserModel {
     this.longitude,
     this.address,
     this.advertiserLocation,
+    this.userType,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -44,6 +46,26 @@ class UserModel {
       longitude: json['longitude']?.toDouble(),
       address: json['address'],
       advertiserLocation: json['advertiser_location'],
+      userType: json['user_type'],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'role': role,
+      'username': username,
+      'email': email,
+      'phone': phone,
+      'whatsapp': whatsapp,
+      'advertiser_name': advertiserName,
+      'advertiser_type': advertiserType,
+      'advertiser_logo': advertiserLogo,
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
+      'advertiser_location': advertiserLocation,
+      'user_type': userType,
+    };
   }
 }

@@ -1,9 +1,13 @@
-import 'package:advertising_app/data/restaurant_data_dummy.dart';
+import 'package:advertising_app/data/model/restaurant_ad_model.dart';
+import 'package:advertising_app/presentation/providers/restaurant_offers_provider.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/generated/l10n.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -24,6 +28,47 @@ class _RestaurantOfferBoxState extends State<RestaurantOfferBox> {
   List<String> _selectedDistricts = [];
   List<String> _selectedCategories = [];
   String? _priceFrom, _priceTo;
+  bool _isMapSortActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshData();
+  }
+
+  Future<void> _refreshData() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<RestaurantOffersProvider>().fetchOfferAds();
+    });
+  }
+
+  Widget _buildSimpleLoadingGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      itemCount: 6,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.75,
+      ),
+      itemBuilder: (context, index) => Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,297 +83,343 @@ class _RestaurantOfferBoxState extends State<RestaurantOfferBox> {
           extendBodyBehindAppBar: true,
           backgroundColor: Colors.white,
           body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header Section
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(height: 10.h),
+            child: Consumer<RestaurantOffersProvider>(
+              builder: (context, provider, child) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                      child: Column(
+                        children: [
+                          _buildHeader(s),
+                          SizedBox(height: 10.h),
+                          _buildFiltersRow(s, provider),
+                          SizedBox(height: 6.h),
+                          _buildSortBar(s, provider.offerAds.length),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _refreshData,
+                        child: provider.isLoadingOffers && provider.offerAds.isEmpty
+                            ? _buildSimpleLoadingGrid()
+                            : provider.offersError != null
+                                ? Center(child: Text("خطأ: ${provider.offersError}"))
+                                : provider.offerAds.isEmpty
+                                    ? Center(child: Text("لا توجد عروض متاحة"))
+                                    : _buildRestaurantGrid(provider.offerAds, cardSize),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ));
+  }
 
-                      // Back Button
-                      GestureDetector(
-                        onTap: () => context.pop(),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 18),
-                            Icon(Icons.arrow_back_ios,
-                                color: KTextColor, size: 17.sp),
-                            Transform.translate(
-                              offset: Offset(-3.w, 0),
-                              child: Text(
-                                S.of(context).back,
-                                style: TextStyle(
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w500,
-                                  color: KTextColor,
+  Widget _buildHeader(S s) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () => context.pop(),
+          child: Row(
+            children: [
+              Icon(Icons.arrow_back_ios, color: KTextColor, size: 17.sp),
+              Transform.translate(
+                  offset: Offset(-3.w, 0),
+                  child: Text(s.back,
+                      style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                          color: KTextColor))),
+            ],
+          ),
+        ),
+        SizedBox(height: 7.h),
+        Center(
+            child: Text("Offers Box",
+                style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 24.sp,
+                    color: KTextColor))),
+      ],
+    );
+  }
+
+  Widget _buildFiltersRow(S s, RestaurantOffersProvider provider) {
+    return Container(
+      height: 35.h,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SvgPicture.asset(
+            'assets/icons/filter.svg',
+            width: 25.w,
+            height: 25.h,
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildMultiSelectField(
+                    context, s.district, _selectedDistricts,
+                    const ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"],
+                    (selection) {
+                      setState(() => _selectedDistricts = selection);
+                      provider.updateDistrictsFilter(selection);
+                    }, isFilter: true),
+                ),
+                SizedBox(width: 7.w),
+                Expanded(
+                  child: _buildRangePickerField(
+                    context, title: s.price, fromValue: _priceFrom, toValue: _priceTo, unit: "AED", isFilter: true,
+                    onTap: () async {
+                      final result = await _showRangePicker(context, title: s.price, initialFrom: _priceFrom, initialTo: _priceTo, unit: "AED");
+                      if (result != null) {
+                        setState(() { _priceFrom = result['from']; _priceTo = result['to']; });
+                        provider.updatePriceRangeForOffers(result['from'], result['to']);
+                      }
+                    }
+                  ),
+                ),
+                SizedBox(width: 7.w),
+                Expanded(
+                  child: _buildMultiSelectField(
+                    context, s.category, _selectedCategories,
+                    const ["Fast Food", "Italian", "Asian", "Desserts", "Arabic"],
+                    (selection) {
+                      setState(() => _selectedCategories = selection);
+                      provider.updateCategoriesFilter(selection);
+                    }, isFilter: true),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSortBar(S s, int adCount) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        bool isSmallScreen = MediaQuery.of(context).size.width <= 370;
+
+        return Row(
+          children: [
+            Text(
+              '${s.ad} $adCount',
+              style: TextStyle(
+                fontSize: 12.sp,
+                color: KTextColor,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            SizedBox(width: isSmallScreen ? 40.w : 35.w),
+            Expanded(
+              child: Container(
+                height: 37.h,
+                padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFF08C2C9)),
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
+                child: Row(
+                  children: [
+                    SvgPicture.asset(
+                      'assets/icons/locationicon.svg',
+                      width: 18.w,
+                      height: 18.h,
+                    ),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: Text(
+                        s.sort,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: KTextColor,
+                          fontSize: 12.sp,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 1.w),
+                    SizedBox(
+                      width: 35.w,
+                      child: Transform.scale(
+                        scale: 0.8,
+                        child: Switch(
+                          value: _isMapSortActive,
+                          onChanged: (val) {
+                            setState(() {
+                              _isMapSortActive = val;
+                            });
+                          },
+                          activeColor: Colors.white,
+                          activeTrackColor: const Color.fromRGBO(8, 194, 201, 1),
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: Colors.grey[300],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+Widget _buildRestaurantGrid(List<RestaurantAdModel> ads, Size cardSize) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 5),
+    child: GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: ads.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 6,
+        childAspectRatio: .89,
+      ),
+      itemBuilder: (context, index) {
+              final ad = ads[index];
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: GestureDetector(
+                  onTap: () {
+                    context.push('/restaurant_details', extra: {'id': ad.id});
+                  },
+                  child: Container(
+                    width: cardSize.width.w,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4.r),
+                      border: Border.all(color: Colors.grey.shade300),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.15),
+                          blurRadius: 5.r,
+                          offset: Offset(0, 2.h),
+                        ),
+                      ],
+                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4.r),
+                            child: CachedNetworkImage(
+                              imageUrl: ImageUrlHelper.getFullImageUrl(ad.mainImage),
+                              height: (cardSize.height * 0.6).h,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                color: Colors.grey[200],
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF08C2C9),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                color: Colors.grey[200],
+                                child: Icon(
+                                  Icons.restaurant,
+                                  color: Colors.grey[400],
+                                  size: 40.sp,
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-
-                      SizedBox(height: 7.h),
-
-                      // Title
-                      Center(
-                        child: Text(
-                          "Offers Box",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 24.sp,
-                            color: KTextColor,
                           ),
-                        ),
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Icon(
+                              Icons.favorite_border,
+                              color: Colors.grey.shade300,
+                            ),
+                          ),
+                        ],
                       ),
-
-                      SizedBox(height: 10.h),
-
-                      // +++ صف الفلاتر المحدث +++
-                      Padding(
-                        padding:
-                            EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                        child: Container(
-                          height: 35.h,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6.w),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              SvgPicture.asset(
-                                'assets/icons/filter.svg',
-                                width: 25.w,
-                                height: 25.h,
-                              ),
-                              SizedBox(width: 12.w),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildMultiSelectField(
-                                        context, S.of(context).district, _selectedDistricts,
-                                        const ["Riyadh", "Jeddah", "Al-Khobar"],
-                                        (selection) => setState(() => _selectedDistricts = selection), isFilter: true),
-                                    ),
-                                    SizedBox(width: 7.w),
-                                    Expanded(
-                                      child: _buildRangePickerField(
-                                        context, title: S.of(context).price, fromValue: _priceFrom, toValue: _priceTo, unit: "AED", isFilter: true,
-                                        onTap: () async {
-                                          final result = await _showRangePicker(context, title: S.of(context).price, initialFrom: _priceFrom, initialTo: _priceTo, unit: "AED");
-                                          if (result != null) {
-                                            setState(() { _priceFrom = result['from']; _priceTo = result['to']; });
-                                          }
-                                        }
-                                      ),
-                                    ),
-                                    SizedBox(width: 7.w),
-                                    Expanded(
-                                      child: _buildMultiSelectField(
-                                        context, S.of(context).category, _selectedCategories,
-                                        const ["Saudi", "Italian", "Asian"],
-                                        (selection) => setState(() => _selectedCategories = selection), isFilter: true),
-                                    ),
-                                  ],
+                              Text(
+                                "${ad.priceRange} AED",
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.sp,
                                 ),
+                              ),
+                              Text(
+                                ad.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.sp,
+                                  color: KTextColor,
+                                ),
+                              ),
+                              Text(
+                                ad.advertiserName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.sp,
+                                  color: KTextColor,
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  SvgPicture.asset(
+                                    'assets/icons/Vector.svg',
+                                    width: 10.5.w,
+                                    height: 13.5.h,
+                                  ),
+                                  SizedBox(width: 5),
+                                  Expanded(
+                                    child: Text(
+                                      "${ad.district}, ${ad.emirate}",
+                                      style: TextStyle(
+                                        fontSize: 12.sp,
+                                        color: Color.fromRGBO(0, 30, 91, .75),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
                       ),
-
-                      SizedBox(height: 6.h),
-
-                      // Second Row
-                      Padding(
-                        padding:
-                            EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                             bool isSmallScreen =
-                                MediaQuery.of(context).size.width <= 370;
-
-                              return Row(
-                                children: [
-                                  Text(
-                                    '${S.of(context).ad} 1000',
-                                    style: TextStyle(
-                                      fontSize: 12.sp,
-                                      color: KTextColor,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                  SizedBox(width: isSmallScreen ? 40.w : 35.w),
-                                  Expanded(
-                                    child: Container(
-                                      height: 37.h,
-                                      padding: EdgeInsetsDirectional.symmetric(
-                                          horizontal: 8.w),
-                                      decoration: BoxDecoration(
-                                        border: Border.all(
-                                            color: const Color(0xFF08C2C9)),
-                                        borderRadius:
-                                            BorderRadius.circular(8.r),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          SvgPicture.asset(
-                                            'assets/icons/locationicon.svg',
-                                            width: 18.w,
-                                            height: 18.h,
-                                          ),
-                                          SizedBox(width: 12.w),
-                                          Expanded(
-                                            child: Text(
-                                              S.of(context).sort,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: KTextColor,
-                                                fontSize: 12.sp,
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 1.w),
-                                          SizedBox(
-                                            width: 35.w,
-                                            child: Transform.scale(
-                                              scale: 0.8,
-                                              child: Switch(
-                                                value: true,
-                                                onChanged: (val) {},
-                                                activeColor: Colors.white,
-                                                activeTrackColor:
-                                                    const Color.fromRGBO(
-                                                        8, 194, 201, 1),
-                                                inactiveThumbColor:
-                                                    Colors.white,
-                                                inactiveTrackColor:
-                                                    Colors.grey[300],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                           
-                          },
-                        ),
-                      ),
-                      SizedBox(height: 5.h),
                     ],
                   ),
-
-                  // Grid Section - Scrollable
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: RestaurantDataDammy.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 6,
-                        childAspectRatio: .89,
-                      ),
-                      itemBuilder: (context, index) {
-                        final ad = RestaurantDataDammy[index];
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: Container(
-                            width: cardSize.width.w,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4.r),
-                              border: Border.all(color: Colors.grey.shade300),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.15),
-                                  blurRadius: 5.r,
-                                  offset: Offset(0, 2.h),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Stack(children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4.r),
-                                    child: Image.asset(
-                                      ad.image,
-                                      height: (cardSize.height * 0.6).h,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Icon(Icons.favorite_border,
-                                        color: Colors.grey.shade300),
-                                  ),
-                                ]),
-                                Expanded(
-                                  child: Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 6.w),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        Text(ad.price, style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 12.sp)),
-                                        Text(
-                                          ad.title,
-                                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor),
-                                        ),
-                                        Text(
-                                          ad.contact, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor)),
-                                        Row(
-                                          children: [
-                                            SvgPicture.asset(
-                                              'assets/icons/Vector.svg', width: 10.5.w, height: 13.5.h),
-                                            SizedBox(width: 5),
-                                            Expanded(
-                                              child: Text(
-                                                ad.location,
-                                                style: TextStyle(
-                                                  fontSize: 12.sp, color: Color.fromRGBO(0, 30, 91, .75), fontWeight: FontWeight.w600),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    height: 20,
-                  )
-                ],
-              ),
-            ),
-          ),
-        ));
+                ),
+                ),
+              );
+            },
+          )
+        );
   }
 }
 

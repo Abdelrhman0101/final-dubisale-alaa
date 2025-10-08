@@ -11,8 +11,9 @@ class ApiService {
     BaseOptions(
       baseUrl: baseUrl,
       receiveDataWhenStatusError: true,
-      connectTimeout: const Duration(milliseconds: 20000),
-      receiveTimeout: const Duration(milliseconds: 20000),
+      connectTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
+      receiveTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
+      sendTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
     ),
   );
@@ -27,6 +28,19 @@ class ApiService {
       final response = await _dio.get(endpoint, queryParameters: query);
       return response.data;
     } on DioException catch (e) {
+      // Graceful 404 handling for public browsing endpoints
+      final status = e.response?.statusCode;
+      if (status == 404) {
+        final ep = endpoint.toLowerCase();
+        // Heuristics: most browse endpoints return list or {data: []}
+        // Return empty list for ads/offer/list endpoints to avoid UI crashes
+        final looksLikeListEndpoint = ep.contains('ads') || ep.contains('offers-box') || ep.contains('best-advertisers') || ep.contains('models') || ep.contains('specs') || ep.contains('options');
+        if (looksLikeListEndpoint) {
+          return [];
+        }
+        // Otherwise, return empty map as a generic fallback
+        return <String, dynamic>{};
+      }
       throw ErrorHandler.handleDioError(e);
     }
   }
@@ -38,9 +52,28 @@ class ApiService {
     }
     
     try {
+      print('=== API SERVICE POST ===');
+      print('URL: $baseUrl$endpoint');
+      print('Data: $data');
+      print('Query: $query');
+      print('Headers: ${_dio.options.headers}');
+      print('=======================');
+
       final response = await _dio.post(endpoint, data: data, queryParameters: query);
+      
+      print('=== API RESPONSE ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('==================');
+      
       return response.data;
     } on DioException catch (e) {
+      print('=== API ERROR ===');
+      print('Error Type: ${e.type}');
+      print('Error Message: ${e.message}');
+      print('Response: ${e.response?.data}');
+      print('Status Code: ${e.response?.statusCode}');
+      print('================');
       throw ErrorHandler.handleDioError(e);
     }
   }
@@ -105,6 +138,37 @@ class ApiService {
     }
   }
 
+  Future<dynamic> put(String endpoint, {required dynamic data, Map<String, dynamic>? query, String? token}) async {
+    if (token != null) {
+      _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    try {
+      print('=== API SERVICE PUT ===');
+      print('URL: $baseUrl$endpoint');
+      print('Data: $data');
+      print('Query: $query');
+      print('Headers: ${_dio.options.headers}');
+      print('=======================');
+
+      final response = await _dio.put(endpoint, data: data, queryParameters: query);
+      
+      print('=== API RESPONSE ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('==================');
+      
+      return response.data;
+    } on DioException catch (e) {
+      print('=== API ERROR ===');
+      print('Error Type: ${e.type}');
+      print('Error Message: ${e.message}');
+      print('Response: ${e.response?.data}');
+      print('Status Code: ${e.response?.statusCode}');
+      print('================');
+      throw ErrorHandler.handleDioError(e);
+    }
+  }
 
 Future<dynamic> putFormData(
   String endpoint, {

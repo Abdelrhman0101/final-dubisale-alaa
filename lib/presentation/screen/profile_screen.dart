@@ -1,17 +1,23 @@
 import 'dart:io';
 import 'package:advertising_app/data/model/user_model.dart';
 import 'package:advertising_app/presentation/providers/auth_repository.dart';
+import 'package:advertising_app/presentation/providers/google_maps_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:advertising_app/constant/string.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:advertising_app/presentation/widget/custom_phone_field.dart';
 import 'package:advertising_app/presentation/widget/custom_text_field.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -36,14 +42,478 @@ class _ProfileScreenState extends State<ProfileScreen> {
   File? _logoImageFile;
   final ImagePicker _picker = ImagePicker();
 
+  // Location-related state variables
+   LatLng? _userLocation;
+  String? _userAddress;
+  bool _isLoadingLocation = false;
+  
+  // FlutterSecureStorage instance for saving location data
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+
   @override
   void initState() {
     super.initState();
     // جلب البيانات وملء الحقول فور فتح الشاشة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshProfileData();
+      _loadLocationData();
+       final authProvider = context.read<AuthProvider>();
+      if (authProvider.user == null) {
+        authProvider.fetchUserProfile();
+      }
+      // Load saved location data when the screen initializes
+      _loadSavedLocation();
     });
+    
   }
+
+  Future<void> _saveLocationToStorage() async {
+    if (_userLocation != null && _userAddress != null) {
+      try {
+        await _storage.write(key: 'user_latitude', value: _userLocation!.latitude.toString());
+        await _storage.write(key: 'user_longitude', value: _userLocation!.longitude.toString());
+        await _storage.write(key: 'user_address', value: _userAddress!);
+        print('Location saved to secure storage successfully');
+      } catch (e) {
+        print('Error saving location to storage: $e');
+      }
+    }
+  }
+
+  // Load location data from FlutterSecureStorage
+  Future<void> _loadSavedLocation() async {
+    try {
+      final latitude = await _storage.read(key: 'user_latitude');
+      final longitude = await _storage.read(key: 'user_longitude');
+      final address = await _storage.read(key: 'user_address');
+      
+      if (latitude != null && longitude != null && address != null) {
+        setState(() {
+          _userLocation = LatLng(double.parse(latitude), double.parse(longitude));
+          _userAddress = address;
+        });
+        print('Location loaded from secure storage: $address');
+      }
+    } catch (e) {
+      print('Error loading location from storage: $e');
+    }
+  }
+
+  // Initialize user location automatically
+  Future<void> _initializeUserLocation() async {
+    if (_userLocation != null) return; // Already initialized
+    
+    setState(() {
+      _isLoadingLocation = true;
+    });
+    
+    try {
+      final mapsProvider = context.read<GoogleMapsProvider>();
+      await mapsProvider.getCurrentLocation();
+      
+      if (mapsProvider.currentLocationData != null) {
+        final locationData = mapsProvider.currentLocationData!;
+        final address = await mapsProvider.getAddressFromCoordinates(
+          locationData.latitude!, 
+          locationData.longitude!
+        );
+        
+        setState(() {
+          _userLocation = LatLng(locationData.latitude!, locationData.longitude!);
+          _userAddress = address ?? 'Unknown location';
+        });
+      }
+    } catch (e) {
+      print('Error initializing location: $e');
+      // Set default Dubai location if current location fails
+      setState(() {
+        _userLocation = const LatLng(25.2048, 55.2708);
+        _userAddress = 'Dubai, UAE';
+      });
+    } finally {
+      setState(() {
+        _isLoadingLocation = false;
+      });
+    }
+  }
+
+
+ 
+ Future<void> _saveLocationData() async {
+    if (_userLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء تحديد الموقع أولاً'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    final authProvider = context.read<AuthProvider>();
+    final user = authProvider.user;
+    
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء تسجيل الدخول أولاً'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('جاري حفظ الموقع...'),
+          ],
+        ),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
+      ),
+    );
+    
+    final success = await authProvider.updateUserProfile(
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      whatsapp: user.whatsapp,
+      advertiserName: user.advertiserName,
+      advertiserType: user.advertiserType,
+      latitude: _userLocation!.latitude,
+      longitude: _userLocation!.longitude,
+      address: _userAddress,
+      advertiserLocation: _userAddress, // إرسال الموقع كـ advertiser_location
+    );
+    
+    // Hide loading and show result
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('تم حفظ الموقع بنجاح!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      // Force refresh the UI to show updated location
+      setState(() {});
+    } else {
+      String errorMessage = 'فشل في حفظ الموقع';
+      if (authProvider.updateError != null) {
+        if (authProvider.updateError!.contains('500')) {
+          errorMessage = 'خطأ في الخادم، الرجاء المحاولة لاحقاً';
+        } else if (authProvider.updateError!.contains('network')) {
+          errorMessage = 'تحقق من اتصال الإنترنت';
+        } else {
+          errorMessage = 'حدث خطأ، الرجاء المحاولة مرة أخرى';
+        }
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(child: Text(errorMessage)),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'إعادة المحاولة',
+            textColor: Colors.white,
+            onPressed: () => _saveLocationData(),
+          ),
+        ),
+      );
+    }
+  }
+
+  // Show location help dialog
+  void _showLocationHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.help_outline, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('كيفية تفعيل خدمة الموقع'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'لتفعيل خدمة الموقع في المتصفح:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                _buildHelpStep('Chrome:', '1. اضغط على أيقونة القفل 🔒 أو الموقع 📍 بجانب العنوان\n2. اختر "السماح" أو "Allow" للموقع\n3. أعد تحميل الصفحة'),
+                const SizedBox(height: 8),
+                _buildHelpStep('Firefox:', '1. اضغط على أيقونة الدرع أو القفل\n2. اختر "إيقاف الحماية" أو "Allow Location"\n3. أعد تحميل الصفحة'),
+                const SizedBox(height: 8),
+                _buildHelpStep('Safari:', '1. اذهب إلى Safari > Preferences > Websites\n2. اختر Location من القائمة\n3. اختر "Allow" للموقع'),
+                const SizedBox(height: 8),
+                _buildHelpStep('Edge:', '1. اضغط على أيقونة القفل بجانب العنوان\n2. اختر "السماح" للموقع\n3. أعد تحميل الصفحة'),
+                const SizedBox(height: 12),
+                const Text(
+                  'إذا لم تنجح الطرق السابقة:',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• تأكد من تفعيل خدمة الموقع في إعدادات الجهاز\n• أعد تشغيل المتصفح\n• جرب متصفح آخر\n• تأكد من اتصالك بالإنترنت',
+                  style: TextStyle(fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('فهمت'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _getCurrentLocation();
+              },
+              child: const Text('جرب الآن'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHelpStep(String browser, String steps) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            browser,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            steps,
+            style: const TextStyle(fontSize: 13,color:KTextColor),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Get current location method
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+    
+    try {
+      final mapsProvider = context.read<GoogleMapsProvider>();
+      await mapsProvider.getCurrentLocation();
+
+      if (mapsProvider.currentLocationData != null) {
+        final locationData = mapsProvider.currentLocationData!;
+        
+        // Convert coordinates to address
+        final address = await mapsProvider.getAddressFromCoordinates(
+            locationData.latitude!, locationData.longitude!);
+        
+        setState(() {
+          _userLocation = LatLng(
+              locationData.latitude!, locationData.longitude!);
+          _userAddress = address ?? 'موقع غير معروف';
+        });
+
+        // Move camera to current location
+        await mapsProvider.moveCameraToLocation(
+            locationData.latitude!, locationData.longitude!,
+            zoom: 16.0);
+
+        // Save location data
+        await _saveLocationData();
+        await _saveLocationToStorage();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديت الموقع بنجاح!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('فشل في تحديد الموقع'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تحديد الموقع: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoadingLocation = false;
+      });
+    }
+  }
+
+  // Open Google Maps method
+  Future<void> _openGoogleMaps() async {
+    try {
+      // Get current location if available, otherwise use Dubai coordinates
+      double lat = _userLocation?.latitude ?? 25.2048;
+      double lng = _userLocation?.longitude ?? 55.2708;
+      
+      // Save current location data before opening maps
+      if (_userLocation != null && _userAddress != null) {
+        await _saveLocationData();
+        await _saveLocationToStorage();
+      }
+      
+      // Create Google Maps URL with better parameters
+      final String googleMapsUrl = 'https://www.google.com/maps/place/$lat,$lng/@$lat,$lng,15z';
+      final Uri url = Uri.parse(googleMapsUrl);
+      
+      // Try to launch Google Maps
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم فتح خرائط جوجل وحفظ الموقع'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // Fallback to web version
+        final String webUrl = 'https://maps.google.com/?q=$lat,$lng&z=15';
+        final Uri webUri = Uri.parse(webUrl);
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم فتح خرائط جوجل (نسخة الويب) وحفظ الموقع'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error opening Google Maps: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل في فتح خرائط جوجل: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  // Navigate to location picker screen
+  Future<void> _navigateToLocationPicker() async {
+    try {
+      // Prepare initial location and address for the picker
+      double? initialLat = _userLocation?.latitude;
+      double? initialLng = _userLocation?.longitude;
+      String? initialAddress = _userAddress;
+      
+      // Build the route with query parameters
+      String route = '/location_picker';
+      if (initialLat != null && initialLng != null) {
+        route += '?lat=$initialLat&lng=$initialLng';
+        if (initialAddress != null && initialAddress.isNotEmpty) {
+          route += '&address=${Uri.encodeComponent(initialAddress)}';
+        }
+      }
+      
+      // Navigate to location picker and wait for result
+      final result = await context.push(route);
+      
+      // Handle the returned location data
+      if (result != null && result is Map<String, dynamic>) {
+        final LatLng? location = result['location'] as LatLng?;
+        final String? address = result['address'] as String?;
+        
+        if (location != null) {
+          setState(() {
+            _userLocation = location;
+            if (address != null && address.isNotEmpty) {
+              _userAddress = address;
+            }
+          });
+          
+          // Save the new location data to database and secure storage
+          await _saveLocationData();
+          await _saveLocationToStorage();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم تحديث الموقع بنجاح'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في اختيار الموقع: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+ 
+
+
+
+
+
+
 
   @override
   void didChangeDependencies() {
@@ -72,47 +542,154 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // Logo upload methods - COMMENTED OUT FOR DEBUGGING
-  
-  // Future<void> _pickLogoImage() async {
-  //   final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-  //   if (pickedFile != null) {
-  //     setState(() {
-  //       _logoImageFile = File(pickedFile.path);
-  //     });
-      
-  //     final authProvider = context.read<AuthProvider>();
-  //     final success = await authProvider.uploadLogo(pickedFile.path);
-      
-  //     if (success) {
+  // Location-related methods
+  Future<void> _loadLocationData() async {
+    final authProvider = context.read<AuthProvider>();
+    final user = authProvider.user;
+    
+    if (user != null && user.latitude != null && user.longitude != null) {
+      setState(() {
+        _userLocation = LatLng(user.latitude!, user.longitude!);
+        _userAddress = user.address ?? user.advertiserLocation ?? 'موقع غير معروف';
+      });
+    }
+  }
+
+  // Future<void> _getCurrentLocation() async {
+  //   setState(() {
+  //     _isLoadingLocation = true;
+  //   });
+    
+  //   try {
+  //     final mapsProvider = context.read<GoogleMapsProvider>();
+  //     await mapsProvider.getCurrentLocation();
+
+  //     if (mapsProvider.currentLocationData != null) {
+  //       final locationData = mapsProvider.currentLocationData!;
+        
+  //       // Convert coordinates to address
+  //       final address = await mapsProvider.getAddressFromCoordinates(
+  //           locationData.latitude!, locationData.longitude!);
+        
+  //       setState(() {
+  //         _userLocation = LatLng(
+  //             locationData.latitude!, locationData.longitude!);
+  //         _userAddress = address ?? 'موقع غير معروف';
+  //       });
+
+  //       // Move camera to current location
+  //       await mapsProvider.moveCameraToLocation(
+  //           locationData.latitude!, locationData.longitude!,
+  //           zoom: 16.0);
+
+  //       // Save location data
+  //       await _saveLocationData();
+
   //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text('Logo uploaded successfully!'), backgroundColor: Colors.green),
+  //         const SnackBar(
+  //           content: Text('تم تحديد الموقع بنجاح!'),
+  //           backgroundColor: Colors.green,
+  //           duration: Duration(seconds: 2),
+  //         ),
   //       );
   //     } else {
   //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text(authProvider.updateError ?? 'Failed to upload logo'), backgroundColor: Colors.red),
+  //         const SnackBar(
+  //           content: Text('فشل في تحديد الموقع'),
+  //           backgroundColor: Colors.red,
+  //           duration: Duration(seconds: 2),
+  //         ),
   //       );
   //     }
+  //   } catch (e) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         content: Text('خطأ في تحديد الموقع: ${e.toString()}'),
+  //         backgroundColor: Colors.red,
+  //         duration: const Duration(seconds: 3),
+  //       ),
+  //     );
+  //   } finally {
+  //     setState(() {
+  //       _isLoadingLocation = false;
+  //     });
   //   }
   // }
 
-  // Future<void> _deleteLogoImage() async {
-  //   final authProvider = context.read<AuthProvider>();
-    
-  //   final success = await authProvider.deleteLogo();
-  //   if (success) {
-  //     setState(() {
-  //       _logoImageFile = null;
-  //     });
+  // Future<void> _saveLocationData() async {
+  //   if (_userLocation == null) {
   //     ScaffoldMessenger.of(context).showSnackBar(
-  //       const SnackBar(content: Text('Logo deleted successfully!'), backgroundColor: Colors.green),
+  //       const SnackBar(
+  //         content: Text('الرجاء تحديد الموقع أولاً'),
+  //         backgroundColor: Colors.orange,
+  //       ),
   //     );
+  //     return;
+  //   }
+    
+  //   final authProvider = context.read<AuthProvider>();
+  //   final user = authProvider.user;
+    
+  //   if (user == null) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(
+  //         content: Text('الرجاء تسجيل الدخول أولاً'),
+  //         backgroundColor: Colors.red,
+  //       ),
+  //     );
+  //     return;
+  //   }
+    
+  //   final success = await authProvider.updateUserProfile(
+  //     username: user.username,
+  //     email: user.email,
+  //     phone: user.phone,
+  //     whatsapp: user.whatsapp,
+  //     advertiserName: user.advertiserName,
+  //     advertiserType: user.advertiserType,
+  //     latitude: _userLocation!.latitude,
+  //     longitude: _userLocation!.longitude,
+  //     address: _userAddress,
+  //     advertiserLocation: _userAddress,
+  //   );
+    
+  //   if (success) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(
+  //         content: Row(
+  //           children: [
+  //             Icon(Icons.check_circle, color: Colors.white),
+  //             SizedBox(width: 8),
+  //             Text('تم حفظ الموقع بنجاح!'),
+  //           ],
+  //         ),
+  //         backgroundColor: Colors.green,
+  //       ),
+  //     );
+      
+  //     setState(() {});
   //   } else {
   //     ScaffoldMessenger.of(context).showSnackBar(
-  //       SnackBar(content: Text(authProvider.updateError ?? 'Failed to delete logo'), backgroundColor: Colors.red),
+  //       SnackBar(
+  //         content: Text(authProvider.updateError ?? 'فشل في حفظ الموقع'),
+  //         backgroundColor: Colors.red,
+  //       ),
   //     );
   //   }
   // }
+
+  // Future<void> _navigateToLocationPicker() async {
+  //   final result = await context.push('/location-picker');
+  //   if (result != null && result is Map<String, dynamic>) {
+  //     setState(() {
+  //       _userLocation = LatLng(result['latitude'], result['longitude']);
+  //       _userAddress = result['address'] ?? 'موقع غير معروف';
+  //     });
+  //     await _saveLocationData();
+  //   }
+  // }
+
+
   
 
   // Helper method to extract phone number without country code
@@ -412,7 +989,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             
                             Text(S.of(context).advertiserLocation, style: TextStyle(color: KTextColor, fontSize: 16.sp, fontWeight: FontWeight.w500)),
                             const SizedBox(height: 5),
-                            Text(S.of(context).address, style: TextStyle(color: KTextColor, fontSize: 16.sp, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                            Text(
+              _userAddress ?? S.of(context).address,
+              style: TextStyle(color: KTextColor, fontSize: 16.sp, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
                             const SizedBox(height: 5),
                             
                            _buildMapSection(context),
@@ -460,36 +1041,551 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
    Widget _buildLabel(String text) => Padding(padding: const EdgeInsets.symmetric(vertical: 4.0), child: Text(text, style: TextStyle(color: KTextColor, fontWeight: FontWeight.w500, fontSize: 16.sp)));
+ 
+ 
   Widget _buildMapSection(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _showEditPopup(() => context.push('/profile')),
-      child: SizedBox(
-        height: 320,
-        width: double.infinity,
-        child: Stack(
-          children: [
-            Positioned.fill(child: Image.asset('assets/images/map.png', fit: BoxFit.cover)),
-            const Positioned(top: 130, left: 0, right: 0, child: Icon(Icons.location_pin, color: Colors.red, size: 40)),
-            Positioned(
-              bottom: 30,
-              left: 20,
-              right: 20,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 26),
-                label: Text(S.of(context).locateMe, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 16)),
-                onPressed: () => _showEditPopup(() => context.push('/profile')),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF01547E),
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final s = S.of(context);
+    return Consumer<GoogleMapsProvider>(
+      builder: (context, mapsProvider, child) {
+        return Container(
+          height: 200.h,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color.fromRGBO(8, 194, 201, 1)),
+          ),
+          child: _isLoadingLocation
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF01547E),
+                  ),
+                )
+              : _userLocation == null
+                  ? Stack(
+                      children: [
+                        // Background placeholder
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              color: Colors.grey[100],
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.location_off,
+                                      size: 48,
+                                      color: Colors.grey,
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Press "Locate Me" to set your location',
+                                      style: TextStyle(color: Colors.grey, fontSize: 14),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Buttons at the bottom
+                        Positioned(
+                          bottom: 2,
+                          left: 16,
+                          right: 16,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  // Locate Me button
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: _isLoadingLocation 
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            ),
+                                          )
+                                        : const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                                      label: Text(
+                                        _isLoadingLocation ? 'جاري التحديد...' : s.locateMe,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+                                      ),
+                                      onPressed: _isLoadingLocation ? null : () async {
+                                        await _getCurrentLocation();
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _isLoadingLocation ? Colors.grey : const Color(0xFF01547E),
+                                        minimumSize: const Size(0, 40),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Open Google Map button
+                                  Expanded(
+                                    child: 
+                                    ElevatedButton.icon(
+                                  icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                                  label: const Text(
+                                    "Open Google Map",
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+                                  ),
+                                  onPressed: () async {
+                                    await _navigateToLocationPicker();
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF01547E),
+                                    minimumSize: const Size(0, 40),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                            ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              // Location Picker button
+                              // SizedBox(
+                              //   width: double.infinity,
+                              //   child: 
+                              //   ElevatedButton.icon(
+                              //     icon: const Icon(Icons.place, color: Colors.white, size: 20),
+                              //     label: const Text(
+                              //       'اختيار الموقع من الخريطة',
+                              //       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+                              //     ),
+                              //     onPressed: () async {
+                              //       await _navigateToLocationPicker();
+                              //     },
+                              //     style: ElevatedButton.styleFrom(
+                              //       backgroundColor: const Color(0xFF4CAF50),
+                              //       minimumSize: const Size(0, 40),
+                              //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              //     ),
+                              //   ),
+                              // ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  : Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: _userLocation!,
+                                zoom: 15.0,
+                              ),
+                              onMapCreated: (GoogleMapController controller) {
+                                mapsProvider.onMapCreated(controller);
+                              },
+                              mapType: MapType.normal,
+                              myLocationEnabled: false,
+                              myLocationButtonEnabled: false,
+                              zoomControlsEnabled: true,
+                              compassEnabled: true,
+                              zoomGesturesEnabled: true,
+                              scrollGesturesEnabled: true,
+                              tiltGesturesEnabled: true,
+                              rotateGesturesEnabled: true,
+                              onTap: (LatLng position) async {
+                                 // Update user location when tapping on map
+                                 setState(() {
+                                   _userLocation = position;
+                                 });
+                                 
+                                 // Get address for the new location
+                                 final address = await mapsProvider.getAddressFromCoordinates(
+                                   position.latitude,
+                                   position.longitude,
+                                 );
+                                 
+                                 if (address != null) {
+                                   setState(() {
+                                     _userAddress = address;
+                                   });
+                                 }
+                                 
+                                 // Save location data automatically
+                                 await _saveLocationData();
+                               },
+                              markers: _userLocation != null
+                                  ? {
+                                      Marker(
+                                        markerId: const MarkerId('user_location'),
+                                        position: _userLocation!,
+                                        draggable: true,
+                                        onDragEnd: (LatLng position) async {
+                                           setState(() {
+                                             _userLocation = position;
+                                           });
+                                           
+                                           // Get address for the new location
+                                           final address = await mapsProvider.getAddressFromCoordinates(
+                                             position.latitude,
+                                             position.longitude,
+                                           );
+                                           
+                                           if (address != null) {
+                                             setState(() {
+                                               _userAddress = address;
+                                             });
+                                           }
+                                           
+                                           // Save location data automatically
+                                           await _saveLocationData();
+                                         },
+                                      ),
+                                    }
+                                  : {},
+                            ),
+                          ),
+                        ),
+                        // Buttons at the bottom when map is visible
+                        Positioned(
+                          bottom: 16,
+                          left: 16,
+                          right: 16,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  // Locate Me button
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                                      label: Text(
+                                        s.locateMe,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+                                      ),
+                                      onPressed: () async {
+                                        await _getCurrentLocation();
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF01547E),
+                                        minimumSize: const Size(0, 40),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Open Google Map button
+                                  Expanded(
+                                    child:
+                                   
+
+                                     ElevatedButton.icon(
+                                  icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                                  label: const Text(
+                                    "Open Google Map",
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+                                  ),
+                                  onPressed: () async {
+                                    await _navigateToLocationPicker();
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF01547E),
+                                    minimumSize: const Size(0, 40),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              // Location Picker button
+                              // SizedBox(
+                              //   width: double.infinity,
+                              //   child: ElevatedButton.icon(
+                              //     icon: const Icon(Icons.place, color: Colors.white, size: 20),
+                              //     label: const Text(
+                              //       'اختيار الموقع من الخريطة',
+                              //       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+                              //     ),
+                              //     onPressed: () async {
+                              //       await _navigateToLocationPicker();
+                              //     },
+                              //     style: ElevatedButton.styleFrom(
+                              //       backgroundColor: const Color(0xFF4CAF50),
+                              //       minimumSize: const Size(0, 40),
+                              //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              //     ),
+                              //   ),
+                              // ),
+                           
+                           
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+        );
+      },
     );
   }
+
+  // Widget _buildMapSection(BuildContext context) {
+  //   final s = S.of(context);
+  //   return Consumer<GoogleMapsProvider>(
+  //     builder: (context, mapsProvider, child) {
+  //       return Container(
+  //         height: 200.h,
+  //         width: double.infinity,
+  //         decoration: BoxDecoration(
+  //           borderRadius: BorderRadius.circular(12),
+  //           border: Border.all(color: const Color.fromRGBO(8, 194, 201, 1)),
+  //         ),
+  //         child: _isLoadingLocation
+  //             ? const Center(
+  //                 child: CircularProgressIndicator(
+  //                   color: Color(0xFF01547E),
+  //                 ),
+  //               )
+  //             : _userLocation == null
+  //                 ? Stack(
+  //                     children: [
+  //                       // Background placeholder
+  //                       Positioned.fill(
+  //                         child: ClipRRect(
+  //                           borderRadius: BorderRadius.circular(12),
+  //                           child: Container(
+  //                             color: Colors.grey[100],
+  //                             child: const Center(
+  //                               child: Column(
+  //                                 mainAxisAlignment: MainAxisAlignment.center,
+  //                                 children: [
+  //                                   Icon(
+  //                                     Icons.location_off,
+  //                                     size: 48,
+  //                                     color: Colors.grey,
+  //                                   ),
+  //                                   SizedBox(height: 8),
+  //                                   Text(
+  //                                     'اضغط "تحديد موقعي" لتعيين موقعك',
+  //                                     style: TextStyle(color: Colors.grey, fontSize: 14),
+  //                                     textAlign: TextAlign.center,
+  //                                   ),
+  //                                 ],
+  //                               ),
+  //                             ),
+  //                           ),
+  //                         ),
+  //                       ),
+  //                       // Buttons at the bottom
+  //                       Positioned(
+  //                         bottom: 16,
+  //                         left: 16,
+  //                         right: 16,
+  //                         child: Column(
+  //                           mainAxisSize: MainAxisSize.min,
+  //                           children: [
+  //                             Row(
+  //                               children: [
+  //                                 // Locate Me button
+  //                                 Expanded(
+  //                                   child: ElevatedButton.icon(
+  //                                     icon: _isLoadingLocation 
+  //                                       ? const SizedBox(
+  //                                           width: 20,
+  //                                           height: 20,
+  //                                           child: CircularProgressIndicator(
+  //                                             strokeWidth: 2,
+  //                                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+  //                                           ),
+  //                                         )
+  //                                       : const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+  //                                     label: Text(
+  //                                       _isLoadingLocation ? 'جاري التحديد...' : s.locateMe,
+  //                                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+  //                                     ),
+  //                                     onPressed: _isLoadingLocation ? null : () async {
+  //                                       await _getCurrentLocation();
+  //                                     },
+  //                                     style: ElevatedButton.styleFrom(
+  //                                       backgroundColor: _isLoadingLocation ? Colors.grey : const Color(0xFF01547E),
+  //                                       minimumSize: const Size(0, 40),
+  //                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  //                                     ),
+  //                                   ),
+  //                                 ),
+  //                                 const SizedBox(width: 8),
+  //                                 // Open Google Map button
+  //                                 Expanded(
+  //                                   child: ElevatedButton.icon(
+  //                                     icon: const Icon(Icons.map, color: Colors.white, size: 20),
+  //                                     label: const Text(
+  //                                       "فتح الخريطة",
+  //                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+  //                                     ),
+  //                                     onPressed: () async {
+  //                                       await _navigateToLocationPicker();
+  //                                     },
+  //                                     style: ElevatedButton.styleFrom(
+  //                                       backgroundColor: const Color(0xFF01547E),
+  //                                       minimumSize: const Size(0, 40),
+  //                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  //                                     ),
+  //                                   ),
+  //                                 ),
+  //                               ],
+  //                             ),
+  //                           ],
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   )
+  //                 : Stack(
+  //                     children: [
+  //                       Positioned.fill(
+  //                         child: ClipRRect(
+  //                           borderRadius: BorderRadius.circular(12),
+  //                           child: GoogleMap(
+  //                             initialCameraPosition: CameraPosition(
+  //                               target: _userLocation!,
+  //                               zoom: 15.0,
+  //                             ),
+  //                             onMapCreated: (GoogleMapController controller) {
+  //                               mapsProvider.onMapCreated(controller);
+  //                             },
+  //                             mapType: MapType.normal,
+  //                             myLocationEnabled: false,
+  //                             myLocationButtonEnabled: false,
+  //                             zoomControlsEnabled: true,
+  //                             compassEnabled: true,
+  //                             zoomGesturesEnabled: true,
+  //                             scrollGesturesEnabled: true,
+  //                             tiltGesturesEnabled: true,
+  //                             rotateGesturesEnabled: true,
+  //                             onTap: (LatLng position) async {
+  //                                // Update user location when tapping on map
+  //                                setState(() {
+  //                                  _userLocation = position;
+  //                                });
+                                 
+  //                                // Get address for the new location
+  //                                final address = await mapsProvider.getAddressFromCoordinates(
+  //                                  position.latitude,
+  //                                  position.longitude,
+  //                                );
+                                 
+  //                                if (address != null) {
+  //                                  setState(() {
+  //                                    _userAddress = address;
+  //                                  });
+  //                                }
+                                 
+  //                                // Save location data automatically
+  //                                await _saveLocationData();
+  //                              },
+  //                             markers: _userLocation != null
+  //                                 ? {
+  //                                     Marker(
+  //                                       markerId: const MarkerId('user_location'),
+  //                                       position: _userLocation!,
+  //                                       draggable: true,
+  //                                       onDragEnd: (LatLng position) async {
+  //                                          setState(() {
+  //                                            _userLocation = position;
+  //                                          });
+                                           
+  //                                          // Get address for the new location
+  //                                          final address = await mapsProvider.getAddressFromCoordinates(
+  //                                            position.latitude,
+  //                                            position.longitude,
+  //                                          );
+                                           
+  //                                          if (address != null) {
+  //                                            setState(() {
+  //                                              _userAddress = address;
+  //                                            });
+  //                                          }
+                                           
+  //                                          // Save location data automatically
+  //                                          await _saveLocationData();
+  //                                        },
+  //                                     ),
+  //                                   }
+  //                                 : {},
+  //                           ),
+  //                         ),
+  //                       ),
+  //                       // Buttons at the bottom when map is visible
+  //                       Positioned(
+  //                         bottom: 16,
+  //                         left: 16,
+  //                         right: 16,
+  //                         child: Column(
+  //                           mainAxisSize: MainAxisSize.min,
+  //                           children: [
+  //                             Row(
+  //                               children: [
+  //                                 // Locate Me button
+  //                                 Expanded(
+  //                                   child: ElevatedButton.icon(
+  //                                     icon: _isLoadingLocation 
+  //                                       ? const SizedBox(
+  //                                           width: 20,
+  //                                           height: 20,
+  //                                           child: CircularProgressIndicator(
+  //                                             strokeWidth: 2,
+  //                                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+  //                                           ),
+  //                                         )
+  //                                       : const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+  //                                     label: Text(
+  //                                       _isLoadingLocation ? 'جاري التحديد...' : s.locateMe,
+  //                                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
+  //                                     ),
+  //                                     onPressed: _isLoadingLocation ? null : () async {
+  //                                       await _getCurrentLocation();
+  //                                     },
+  //                                     style: ElevatedButton.styleFrom(
+  //                                       backgroundColor: _isLoadingLocation ? Colors.grey : const Color(0xFF01547E),
+  //                                       minimumSize: const Size(0, 40),
+  //                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  //                                     ),
+  //                                   ),
+  //                                 ),
+  //                                 const SizedBox(width: 8),
+  //                                 // Open Google Map button
+  //                                 Expanded(
+  //                                   child: ElevatedButton.icon(
+  //                                     icon: const Icon(Icons.map, color: Colors.white, size: 20),
+  //                                     label: const Text(
+  //                                       "فتح الخريطة",
+  //                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+  //                                     ),
+  //                                     onPressed: () async {
+  //                                       await _navigateToLocationPicker();
+  //                                     },
+  //                                     style: ElevatedButton.styleFrom(
+  //                                       backgroundColor: const Color(0xFF01547E),
+  //                                       minimumSize: const Size(0, 40),
+  //                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  //                                     ),
+  //                                   ),
+  //                                 ),
+  //                               ],
+  //                             ),
+  //                           ],
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //       );
+  //     },
+  //   );
+  // }
   
     Widget _buildUploadButton() {
     return GestureDetector(
@@ -535,16 +1631,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: _logoImageFile != null
                 ? Image.file(_logoImageFile!, fit: BoxFit.cover)
                 : (user?.advertiserLogo != null && user!.advertiserLogo!.isNotEmpty
-                    ? Image.network(
-                        user.advertiserLogo!, 
-                        fit: BoxFit.cover, 
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Center(child: Icon(Icons.broken_image, size: 50, color: Colors.grey));
-                        },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const Center(child: CircularProgressIndicator());
-                        },
+                    ? CachedNetworkImage(
+                        imageUrl: ImageUrlHelper.getFullImageUrl(user.advertiserLogo!),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[300],
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        ),
+                        errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, size: 50, color: Colors.grey)),
                       )
                     : const Center(child: Icon(Icons.person, size: 50, color: Colors.grey))),
           ),

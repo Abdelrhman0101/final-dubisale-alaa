@@ -1,11 +1,14 @@
 import 'dart:ui';
 
 import 'package:advertising_app/generated/l10n.dart';
+import 'package:advertising_app/presentation/screen/all_add_car_sales.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:advertising_app/presentation/providers/auth_repository.dart';
 
 class CustomBottomNav extends StatelessWidget {
   final int currentIndex;
@@ -33,9 +36,41 @@ class CustomBottomNav extends StatelessWidget {
           case 1:
             context.push('/favorite');
             break;
-          case 2:
-            context.push('/postad');
+          case 2: {
+            final auth = context.read<AuthProvider>();
+            final userType = auth.userType?.toLowerCase();
+
+            if (userType == 'advertiser') {
+              context.push('/postad');
+            } else {
+              showDialog(
+                context: context,
+                builder: (ctx) {
+                  return AlertDialog(
+                    title: const Text('تنبيه'),
+                    content: const Text(
+                      'لا يمكنك إضافة إعلان إلا بعد تفعيل رقم هاتفك.\n\nرجاءً فعّل رقمك من صفحة البروفايل.',
+                     style: TextStyle(color: KTextColor),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('إلغاء'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          context.push('/editprofile');
+                        },
+                        child: const Text('تفعيل الآن'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            }
             break;
+          }
           case 3:
             context.push('/manage');
             break;

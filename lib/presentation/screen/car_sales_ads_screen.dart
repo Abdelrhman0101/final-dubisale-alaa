@@ -531,7 +531,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
     List<String> validationErrors = [];
     if (_titleController.text.trim().isEmpty) validationErrors.add(s.title);
     if (selectedMake == null) validationErrors.add(s.make);
-    if (selectedModel == null) validationErrors.add(s.model);
+    if (selectedModel == null || (selectedModel != "All" && selectedModel != "Other" && selectedModel!.trim().isEmpty)) validationErrors.add(s.model);
     if (_yearController.text.trim().isEmpty) validationErrors.add(s.year);
     if (_kilometersController.text.trim().isEmpty) validationErrors.add(s.km);
     if (_priceController.text.trim().isEmpty) validationErrors.add(s.price);
@@ -581,6 +581,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
 
     // تجميع البيانات في Map لتمريرها إلى الصفحة التالية
     final Map<String, dynamic> adData = {
+      'adType': 'car_sale', // إضافة نوع الإعلان
       'title': _titleController.text,
       'description': _descriptionController.text,
       'make': selectedMake!,
@@ -614,6 +615,55 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
       'advertiser_location': selectedLocation,
     };
 
+    // طباعة بيانات الإعلان في Console
+    print('=== بيانات الإعلان المختارة ===');
+    print('نوع الإعلان: ${adData['adType']}');
+    print('العنوان: ${adData['title']}');
+    print('الوصف: ${adData['description']}');
+    print('الماركة: ${adData['make']}');
+    print('الموديل: ${adData['model']}');
+    print('السنة: ${adData['year']}');
+    print('الكيلومترات: ${adData['km']}');
+    print('السعر: ${adData['price']}');
+    print('نوع ناقل الحركة: ${adData['transType']}');
+    print('الإمارة: ${adData['emirate']}');
+    print('المنطقة: ${adData['area']}');
+    print('اسم المعلن: ${adData['advertiserName']}');
+    print('نوع المعلن: ${adData['advertiserType']}');
+    print('رقم الهاتف: ${adData['phoneNumber']}');
+    print('واتساب: ${adData['whatsapp']}');
+    print('عدد الصور الإضافية: ${adData['thumbnailImages']?.length ?? 0}');
+    print('================================');
+
+    // فحص حالة التحقق من الحساب قبل الانتقال لصفحة الإعلان
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.verifyAccount == false) {
+      // إظهار رسالة التحقق مع زر الانتقال للبروفايل
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('تفعيل الحساب مطلوب'),
+            content: const Text('يجب تفعيل حسابك أولاً لتتمكن من إضافة الإعلانات'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  context.push('/edit_profile');
+                },
+                child: const Text('الذهاب للبروفايل'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
     // الانتقال إلى صفحة اختيار نوع الإعلان مع تمرير البيانات
     final result = await context.push('/placeAnAd', extra: adData);
 
@@ -633,43 +683,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
   Future<bool> submitCarAd(Map<String, dynamic> adData) async {
     final provider = context.read<CarAdProvider>();
 
-    final success = await provider.submitCarAd(
-      adData, // المعامل الأول المطلوب
-      title: adData['title'],
-      description: adData['description'],
-      make: adData['make'],
-      model: adData['model'],
-      trim: adData['trim'],
-      year: adData['year'],
-      km: adData['km'],
-      price: adData['price'],
-      specs: adData['specs'],
-      carType: adData['carType'],
-      transType: adData['transType'],
-      fuelType: adData['fuelType'],
-      color: adData['color'],
-      interiorColor: adData['interiorColor'],
-      warranty: adData['warranty'],
-      engineCapacity: adData['engineCapacity'],
-      cylinders: adData['cylinders'],
-      horsepower: adData['horsepower'],
-      doorsNo: adData['doorsNo'],
-      seatsNo: adData['seatsNo'],
-      steeringSide: adData['steeringSide'],
-      advertiserName: adData['advertiserName'],
-      phoneNumber: adData['phoneNumber'],
-      whatsapp: adData['whatsapp'],
-      emirate: adData['emirate'],
-      area: adData['area'],
-      advertiserType: adData['advertiserType'],
-      mainImage: adData['mainImage'],
-      thumbnailImages: adData['thumbnailImages'],
-      planType: adData['planType'] ?? 'free',
-      planDays: adData['planDays'] ?? 30,
-      planExpiresAt: adData['planExpiresAt'] ??
-          DateTime.now().add(Duration(days: 30)).toIso8601String(),
-    );
-
+    final success = await provider.submitCarAd(adData);
     return success;
   }
 
@@ -860,7 +874,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
                       const SizedBox(height: 7),
                       _buildTitledTextFormField(
                           s.title, _titleController, borderColor, currentLocale,
-                          minLines: 2, maxLines: 3),
+                          minLines: 3, maxLines: 4),
                       const SizedBox(height: 7),
                       _buildFormRow([
                         Consumer<CarSalesInfoProvider>(
@@ -1161,7 +1175,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
         controller: controller,
         minLines: minLines,
         maxLines: maxLines,
-        maxLength: maxLines > 1 ? 70 : null,
+        maxLength: maxLines > 1 ? 100 : null,
         style: const TextStyle(
             fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12),
         textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,

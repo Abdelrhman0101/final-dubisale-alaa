@@ -1,5 +1,6 @@
 import 'package:advertising_app/data/model/user_model.dart';
 import 'package:advertising_app/data/repository/auth_repository.dart';
+import 'package:advertising_app/data/web_services/api_service.dart';
 import 'package:flutter/material.dart';
 // <-- تأكد 100% من وجود هذا الـ import
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -10,22 +11,58 @@ class AuthProvider with ChangeNotifier {
 
   // إنشاء نسخة واحدة وثابتة من الـ storage لاستخدامها في كل الدوال
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final ApiService _apiService = ApiService();
   
   AuthProvider(this._authRepository);
 
   // دالة للتحقق من وجود جلسة مخزنة
   Future<bool> checkStoredSession() async {
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token != null && token.isNotEmpty) {
-        // إذا وُجد token، نحاول جلب بيانات المستخدم للتأكد من صحة الجلسة
-        await fetchUserProfile();
+      final userId = await _storage.read(key: 'user_id');
+      final userType = await _storage.read(key: 'user_type');
+      final userPhone = await _storage.read(key: 'user_phone'); // قراءة رقم الهاتف المحفوظ
+      final verifyAccountStr = await _storage.read(key: 'verify_account');
+      // قراءة بيانات الموقع المحفوظة محلياً (إن وجدت)
+      final savedLatStr = await _storage.read(key: 'user_latitude');
+      final savedLngStr = await _storage.read(key: 'user_longitude');
+      final savedAddress = await _storage.read(key: 'user_address');
+      final double? savedLat = savedLatStr != null ? double.tryParse(savedLatStr) : null;
+      final double? savedLng = savedLngStr != null ? double.tryParse(savedLngStr) : null;
+      
+      if (userId != null && userType != null) {
+        _userId = int.tryParse(userId);
+        _userType = userType;
+        _verifyAccount = verifyAccountStr == 'true';
+        
+        // إنشاء UserModel من البيانات المحفوظة مع رقم الهاتف
+        _user = UserModel(
+          id: _userId ?? 0,
+          username: '', // يمكن إضافة هذه البيانات لاحقاً إذا كانت مطلوبة
+          email: '',
+          phone: userPhone ?? '', // استخدام رقم الهاتف المحفوظ
+          whatsapp: '',
+          role: _userType ?? '',
+          userType: _userType ?? '',
+          // تضمين بيانات الموقع المحفوظة في نموذج المستخدم
+          latitude: savedLat,
+          longitude: savedLng,
+          address: savedAddress,
+          advertiserLocation: savedAddress,
+        );
+        
+        print("Stored session found - User ID: $_userId, User Type: $_userType, Phone: $userPhone, Verify Account: $_verifyAccount, Address: $savedAddress, Lat: $savedLat, Lng: $savedLng");
+        print("User model created: ${_user?.toJson()}");
+        notifyListeners(); // إشعار الواجهة بالتحديث
         return true;
       }
       return false;
     } catch (e) {
-      // إذا فشل في جلب البيانات، نحذف الـ token المعطوب
-      await _storage.delete(key: 'auth_token');
+      print("Error in checkStoredSession: $e");
+      // إذا فشل في قراءة البيانات، نحذف البيانات المعطوبة
+      await _storage.delete(key: 'user_id');
+      await _storage.delete(key: 'user_type');
+      await _storage.delete(key: 'user_phone');
+      await _storage.delete(key: 'verify_account');
       return false;
     }
   }
@@ -39,6 +76,12 @@ class AuthProvider with ChangeNotifier {
   UserModel? _user;
   UserModel? get user => _user;
 
+  // إضافة متغيرات جديدة لحفظ user_type و id
+  String? _userType;
+  int? _userId;
+  String? get userType => _userType;
+  int? get userId => _userId;
+
   bool _isLoadingProfile = false;
   bool get isLoadingProfile => _isLoadingProfile;
 
@@ -49,6 +92,10 @@ class AuthProvider with ChangeNotifier {
   String? _updateError;
   bool get isUpdating => _isUpdating;
   String? get updateError => _updateError;
+
+  // إضافة متغير verify_account
+  bool? _verifyAccount;
+  bool get verifyAccount => _verifyAccount ?? false;
 
   
 
@@ -61,14 +108,54 @@ class AuthProvider with ChangeNotifier {
     _errorMessage = message;
   }
   
-    Future<bool> login({required String identifier, required String password}) async {
+  Future<bool> login({required String phone}) async {
     _setError(null);
     _setLoading(true);
     try {
-      final response = await _authRepository.login(identifier: identifier, password: password);
-      final token = response['access_token']; 
-      await _storage.write(key: 'auth_token', value: token);
-      print("Token stored successfully!");
+      print("Starting login with phone: $phone");
+      final response = await _authRepository.login(phone: phone);
+      print("Login response received: $response");
+      // لا نقوم بحفظ أي توكن عند تسجيل الدخول؛ التوكن يُحفظ بعد التحقق من OTP فقط
+      
+      // استخراج البيانات من الاستجابة الجديدة
+      final userData = response['user'];
+      if (userData != null) {
+        _userId = userData['id'];
+        _userType = userData['user_type'];
+        _verifyAccount = false; // افتراضياً false عند تسجيل الدخول
+        
+        print("Extracted user data - ID: $_userId, Type: $_userType");
+        
+        // حفظ البيانات في secure storage بما في ذلك رقم الهاتف
+        await _storage.write(key: 'user_id', value: _userId.toString());
+        await _storage.write(key: 'user_type', value: _userType!);
+        await _storage.write(key: 'user_phone', value: phone); // حفظ رقم الهاتف
+        await _storage.write(key: 'verify_account', value: 'false');
+        // حفظ موقع المعلن القادم من الـ API إن توفر
+        if (userData['advertiser_location'] != null && (userData['advertiser_location'] as String).trim().isNotEmpty) {
+          await _storage.write(key: 'user_address', value: (userData['advertiser_location'] as String).trim());
+        }
+        if (userData['latitude'] != null) {
+          await _storage.write(key: 'user_latitude', value: userData['latitude'].toString());
+        }
+        if (userData['longitude'] != null) {
+          await _storage.write(key: 'user_longitude', value: userData['longitude'].toString());
+        }
+        
+        print("Data saved to secure storage including phone: $phone");
+        
+        // إنشاء UserModel من البيانات المستلمة
+        _user = UserModel.fromJson(userData);
+        
+        print("User logged in successfully!");
+        print("User ID: $_userId");
+        print("User Type: $_userType");
+        print("Verify Account: $_verifyAccount");
+        print("User model: ${_user?.toJson()}");
+        
+        notifyListeners(); // إشعار الواجهة بالتحديث
+      }
+      
       _setLoading(false);
       return true; 
     } catch (e) {
@@ -79,63 +166,85 @@ class AuthProvider with ChangeNotifier {
   }
    
    
-   Future<bool> signUp({
-    required String username,
-    required String email,
-    required String password,
-    required String phone,
-    required String role,
-  }) async {
-    _setError(null);
-    _setLoading(true);
+   // دالة signUp - تم إزالتها لأنها لم تعد مطلوبة في النظام الجديد
+   // Future<bool> signUp({
+   //   required String username,
+   //   required String email,
+   //   required String password,
+   //   required String phone,
+   //   required String role,
+   // }) async {
+   //   _setError(null);
+   //   _setLoading(true);
+   //   try {
+   //     await _authRepository.signUp(
+   //       username: username,
+   //       email: email,
+   //       password: password,
+   //       phone: phone,
+   //       whatsapp: phone,
+   //       role: role,
+   //     );
+   //     _setLoading(false);
+   //     return true;
+   //   } catch (e) {
+   //     _setError(e.toString());
+   //     _setLoading(false);
+   //     return false;
+   //   }
+   // }
+
+
+  Future<void> _clearSavedLocation() async {
     try {
-      await _authRepository.signUp(
-        username: username,
-        email: email,
-        password: password,
-        phone: phone,
-        whatsapp: phone,
-        role: role,
-      );
-      _setLoading(false);
-      return true;
+      await _storage.delete(key: 'user_latitude');
+      await _storage.delete(key: 'user_longitude');
+      await _storage.delete(key: 'user_address');
+      print('Saved location cleared from secure storage.');
     } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
+      print('Error clearing saved location: $e');
     }
   }
 
  Future<bool> logout() async {
     _setError(null);
-    // يمكنك اختيار عرض مؤشر تحميل أو لا. سأقوم بتفعيله.
     _setLoading(true);
-
+    
+    await _clearSavedLocation();
     try {
-      // 1. قراءة التوكن المخزن حاليًا
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) {
-        // إذا لم يكن هناك توكن، فالمستخدم مسجل خروجه بالفعل
-        _setLoading(false);
-        return true;
-      }
+      // حذف البيانات المحفوظة محلياً
+      await _storage.delete(key: 'user_id');
+      await _storage.delete(key: 'user_type');
+      await _storage.delete(key: 'verify_account');
+      await _storage.delete(key: 'auth_token'); // حذف التوكن من التحقق
+      await _storage.delete(key: 'login_token'); // حذف التوكن من تسجيل الدخول
       
-      // 2. استدعاء API تسجيل الخروج عبر الـ Repository
-      await _authRepository.logout(token: token);
+      // مسح البيانات من المتغيرات
+      _userId = null;
+      _userType = null;
+      _user = null;
+      _verifyAccount = null;
       
-      // 3. (الأهم) حذف التوكن من التخزين المحلي بعد نجاح الطلب
-      await _storage.delete(key: 'auth_token');
-      print("Token deleted. Logout successful!");
-
+      print("User logged out successfully!");
+      
       _setLoading(false);
-      return true; // إرجاع true علامة على النجاح
+      return true;
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
-      // كإجراء احترازي، قم بحذف التوكن المحلي حتى لو فشل الاتصال بالسيرفر
-      // هذا يضمن أن المستخدم لن يبقى عالقًا في حالة تسجيل دخول خاطئة
+      
+      // كإجراء احترازي، قم بحذف البيانات المحلية حتى لو فشل شيء ما
+      await _storage.delete(key: 'user_id');
+      await _storage.delete(key: 'user_type');
+      await _storage.delete(key: 'verify_account');
       await _storage.delete(key: 'auth_token');
-      return false; // إرجاع false علامة على الفشل
+      await _storage.delete(key: 'login_token');
+      _userId = null;
+      _userType = null;
+      _user = null;
+      _verifyAccount = null;
+      
+      return false;
     }
   }
 
@@ -144,11 +253,9 @@ class AuthProvider with ChangeNotifier {
     _profileError = null;
     notifyListeners();
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) throw Exception('User not authenticated.');
-
-      // --- هذا هو الإصلاح: تمرير التوكن إلى الـ Repository ---
-      final userProfile = await _authRepository.getUserProfile(token: token);
+      // تمرير auth_token لضمان المصادقة وتجنب 401
+      final authToken = await _storage.read(key: 'auth_token');
+      final userProfile = await _authRepository.getUserProfile(token: authToken);
       _user = userProfile;
 
     } catch (e) {
@@ -170,12 +277,27 @@ class AuthProvider with ChangeNotifier {
     _updateError = null;
     notifyListeners();
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) throw Exception('Not authenticated.');
+      // الاعتماد حصراً على auth_token كما طلبتِ
+      final authToken = await _storage.read(key: 'auth_token');
+
+      if (authToken == null) {
+        _updateError = 'Not authenticated. Missing auth_token.';
+        throw Exception('Not authenticated.');
+      }
+
+      print("Using auth_token for profile update: ${authToken.substring(0, 20)}...");
       final updatedUser = await _authRepository.updateProfile(
-          token: token, username: username, email: email, phone: phone,
-          whatsapp: whatsapp, advertiserName: advertiserName, advertiserType: advertiserType,
-          latitude: latitude, longitude: longitude, address: address, advertiserLocation: advertiserLocation
+        token: authToken,
+        username: username,
+        email: email,
+        phone: phone,
+        whatsapp: whatsapp,
+        advertiserName: advertiserName,
+        advertiserType: advertiserType,
+        latitude: latitude,
+        longitude: longitude,
+        address: address,
+        advertiserLocation: advertiserLocation,
       );
       _user = updatedUser;
       
@@ -191,7 +313,6 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // --- دالة تحديث كلمة المرور المعدلة ---
   Future<bool> updateUserPassword({
     required String currentPassword,
     required String newPassword,
@@ -200,9 +321,11 @@ class AuthProvider with ChangeNotifier {
     _updateError = null;
     notifyListeners();
     try {
-       final token = await _storage.read(key: 'auth_token');
-       if (token == null) throw Exception('Not authenticated.');
-       await _authRepository.updatePassword(token: token, currentPassword: currentPassword, newPassword: newPassword);
+       // الاعتماد حصراً على auth_token
+       final authToken = await _storage.read(key: 'auth_token');
+       if (authToken == null) throw Exception('Not authenticated.');
+       
+       await _authRepository.updatePassword(token: authToken, currentPassword: currentPassword, newPassword: newPassword);
        return true;
     } catch(e) {
       _updateError = e.toString();
@@ -217,11 +340,12 @@ class AuthProvider with ChangeNotifier {
     _updateError = null;
     notifyListeners();
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) throw Exception('Not authenticated.');
+      // الاعتماد حصراً على auth_token
+      final authToken = await _storage.read(key: 'auth_token');
+      if (authToken == null) throw Exception('Not authenticated.');
       
       final updatedUser = await _authRepository.uploadLogo(
-        token: token,
+        token: authToken,
         logoPath: logoPath,
       );
       
@@ -241,10 +365,11 @@ class AuthProvider with ChangeNotifier {
     _updateError = null;
     notifyListeners();
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) throw Exception('Not authenticated.');
+      // الاعتماد حصراً على auth_token
+      final authToken = await _storage.read(key: 'auth_token');
+      if (authToken == null) throw Exception('Not authenticated.');
       
-      final updatedUser = await _authRepository.deleteLogo(token: token);
+      final updatedUser = await _authRepository.deleteLogo(token: authToken);
       _user = updatedUser;
       return true;
     } catch (e) {
@@ -255,12 +380,151 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-   
-   
-   
-   
-   
-   
-   
-   
-   }
+
+  // دالة لتحديث حالة verify_account
+  Future<void> setVerifyAccount(bool value) async {
+    _verifyAccount = value;
+    await _storage.write(key: 'verify_account', value: value.toString());
+    notifyListeners();
+  }
+
+  // Convert user to advertiser
+  Future<bool> convertToAdvertiser() async {
+    try {
+      print('🔄 convertToAdvertiser: Starting conversion process...');
+      _setLoading(true);
+      _setError(null);
+
+      // Get current user ID
+      if (_user == null) {
+        print('❌ convertToAdvertiser: No user data available');
+        throw Exception('User data not available');
+      }
+      
+      final userId = _user!.id;
+      print('👤 convertToAdvertiser: User ID = $userId');
+      
+      final endpoint = '/api/convert-to-advertiser/$userId';
+      print('🌐 convertToAdvertiser: Making POST request to: $endpoint');
+
+      final response = await _apiService.post(
+        endpoint,
+        data: {},
+      );
+
+      print('✅ convertToAdvertiser: API call successful');
+      print('📄 convertToAdvertiser: Response = $response');
+      
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      print('❌ convertToAdvertiser: Error occurred = $e');
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // Verify OTP
+  Future<bool> verifyOTP(String phoneNumber, String otpCode) async {
+    try {
+      _setLoading(true);
+      _setError(null);
+
+      final response = await _apiService.put('/api/verify', data: {
+        'phone': phoneNumber,
+        'otp': otpCode,
+      });
+
+      if (response['access_token'] != null) {
+        // حفظ التوكن
+        await _storage.write(key: 'auth_token', value: response['access_token']);
+
+        // استخراج بيانات المستخدم من الاستجابة (داخل المفتاح 'user')
+        final Map<String, dynamic>? userData =
+            response['user'] is Map<String, dynamic> ? response['user'] as Map<String, dynamic> : null;
+
+        // قراءة القيم بأمان
+        final int? idFromResponse = userData != null
+            ? (userData['id'] is int
+                ? userData['id'] as int
+                : int.tryParse(userData['id']?.toString() ?? ''))
+            : null;
+        final String userTypeFromResponse = (userData?['user_type'] ?? userData?['role'] ?? '')
+            .toString();
+
+        // كتابة القيم في التخزين الآمن
+        await _storage.write(key: 'user_id', value: (idFromResponse?.toString() ?? ''));
+        await _storage.write(key: 'user_type', value: userTypeFromResponse);
+        await _storage.write(key: 'user_phone', value: phoneNumber); // حفظ رقم الهاتف المستخدم في التحقق
+        await _storage.write(key: 'verify_account', value: 'true'); // تحديث حالة التحقق
+
+        // تحديث حالة AuthProvider مباشرة
+        _userId = idFromResponse;
+        _userType = userTypeFromResponse;
+        _verifyAccount = true;
+
+        // إنشاء UserModel محدث بدون فرض ! على قيم قد تكون فارغة
+        _user = UserModel(
+          id: _userId ?? 0,
+          username: (userData?['username'] ?? '').toString(),
+          email: (userData?['email'] ?? '').toString(),
+          phone: (userData?['phone'] ?? phoneNumber).toString(),
+          whatsapp: (userData?['whatsapp'] ?? '').toString(),
+          role: (userData?['role'] ?? _userType ?? '').toString(),
+          userType: (_userType ?? '').toString(),
+        );
+
+        print("OTP verified successfully - User ID: $_userId, User Type: $_userType, Phone: $phoneNumber");
+        print("Updated user model: ${_user?.toJson()}");
+        notifyListeners(); // إشعار الواجهة بالتحديث
+      }
+
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// دالة إعادة إرسال OTP باستخدام endpoint منفصل
+  Future<bool> resendOTP(String phoneNumber) async {
+    try {
+      _setLoading(true);
+      _setError(null);
+
+      print("🔄 resendOTP: Starting resend OTP for phone: $phoneNumber");
+
+      // استدعاء API لإعادة إرسال OTP
+      final response = await _apiService.post(
+        '/api/resend-otp',
+        data: {
+          'phone': phoneNumber,
+        },
+      );
+
+      print("✅ resendOTP: API call successful");
+      print("📄 resendOTP: Response = $response");
+
+      // التحقق من نجاح العملية بناءً على وجود الاستجابة
+      if (response != null) {
+        print("✅ resendOTP: OTP resent successfully for phone: $phoneNumber");
+        _setLoading(false);
+        return true;
+      } else {
+        final errorMessage = 'فشل في إعادة إرسال الرمز';
+        print("❌ resendOTP: Failed - $errorMessage");
+        _setError(errorMessage);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      print("❌ resendOTP: Error occurred = $e");
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+}

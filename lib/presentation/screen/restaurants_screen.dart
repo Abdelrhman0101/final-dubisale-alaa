@@ -2,14 +2,18 @@ import 'dart:math';
 import 'package:advertising_app/data/restaurant_data_dummy.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:advertising_app/presentation/widget/custom_category.dart';
+import 'package:advertising_app/presentation/widget/unified_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:advertising_app/generated/l10n.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:advertising_app/presentation/providers/restaurants_info_provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -25,6 +29,7 @@ class RestaurantsScreen extends StatefulWidget {
 
 class _RestaurantsScreenState extends State<RestaurantsScreen> {
   int _selectedIndex = 6;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   
   // متغيرات الاختيار الواحد
   String? _selectedEmirate;
@@ -41,8 +46,10 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
   
   Future<void> _loadData() async {
     final provider = Provider.of<RestaurantsInfoProvider>(context, listen: false);
-    final token = 'your_token_here'; // يجب الحصول على التوكن من التخزين الآمن
+    final token = await _storage.read(key: 'auth_token') ?? '';
     await provider.fetchAllData(token: token);
+    // جلب أفضل المعلنين للمطاعم
+    await provider.fetchTopRestaurants(token: token, category: 'restaurant');
   }
 
   List<String> get categories => [
@@ -189,40 +196,42 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                         builder: (context, provider, child) {
                           return Column(
                             children: [
-                              _buildSingleSelectField(
-                                context, 
-                                s.emirate, 
-                                _selectedEmirate, 
-                                ['All', ...provider.emirateDisplayNames, 'Other'], 
-                                (selection) => setState(() {
+                              UnifiedDropdown<String>(
+                                title: s.emirate,
+                                selectedValue: _selectedEmirate,
+                                items: ['All', ...provider.emirateDisplayNames, 'Other'],
+                                onConfirm: (selection) => setState(() {
                                   _selectedEmirate = selection;
                                   _selectedDistrict = null; // إعادة تعيين المنطقة عند تغيير الإمارة
                                 }),
-                                isLoading: provider.isLoading
+                                isLoading: provider.isLoading,
                               ),
                               
                               SizedBox(height: 3.h),
                               
-                              _buildSingleSelectField(
-                                context, 
-                                s.district_choose, 
-                                _selectedDistrict, 
-                                _selectedEmirate == null || _selectedEmirate == 'All' || _selectedEmirate == 'Other'
+                              UnifiedDropdown<String>(
+                                title: s.district_choose,
+                                selectedValue: _selectedDistrict,
+                                items: _selectedEmirate == null || _selectedEmirate == 'Other'
                                   ? ['All', 'Other']
-                                  : ['All', ...provider.getDistrictsForEmirate(_selectedEmirate), 'Other'], 
-                                (selection) => setState(() => _selectedDistrict = selection),
-                                isLoading: provider.isLoading
+                                  : _selectedEmirate == 'All'
+                                    ? ['All', ...provider.emirateDisplayNames
+                                        .expand((emirate) => provider.getDistrictsForEmirate(emirate))
+                                        .toSet()
+                                        .toList(), 'Other']
+                                    : ['All', ...provider.getDistrictsForEmirate(_selectedEmirate), 'Other'],
+                                onConfirm: (selection) => setState(() => _selectedDistrict = selection),
+                                isLoading: provider.isLoading,
                               ),
                               
                               SizedBox(height: 3.h),
                               
-                              _buildSingleSelectField(
-                                context, 
-                                s.category_type, 
-                                _selectedCategory, 
-                                ['All', ...provider.categoryDisplayNames, 'Other'], 
-                                (selection) => setState(() => _selectedCategory = selection),
-                                isLoading: provider.isLoading
+                              UnifiedDropdown<String>(
+                                title: s.category_type,
+                                selectedValue: _selectedCategory,
+                                items: ['All', ...provider.categoryDisplayNames, 'Other'],
+                                onConfirm: (selection) => setState(() => _selectedCategory = selection),
+                                isLoading: provider.isLoading,
                               ),
                             ],
                           );
@@ -233,13 +242,14 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                       Padding(
                         padding:
                             EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                        child: GestureDetector(
-                          onTap: () {
+                        child: UnifiedSearchButton(
+                          text: s.search,
+                          onPressed: () {
                             // التحقق من صحة البيانات قبل البحث - السماح بـ All لعرض جميع البيانات
                             if (_selectedEmirate == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text("please_select_emirate"),
+                                  content: Text("Please Select Emirate."),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -249,7 +259,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                             if (_selectedDistrict == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text("please_select_district"),
+                                  content: Text("Please Select District."),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -259,7 +269,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                             if (_selectedCategory == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text("please_select_category"),
+                                  content: Text("Please Select Category."),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -273,24 +283,14 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                               'category': _selectedCategory,
                             };
                             context.push('/restaurant_search', extra: filters);
+                            
+                            // مسح الاختيارات بعد البحث
+                            setState(() {
+                              _selectedEmirate = null;
+                              _selectedDistrict = null;
+                              _selectedCategory = null;
+                            });
                           },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: KPrimaryColor,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            height: 43,
-                            width: double.infinity,
-                            child: Center(
-                              child: Text(
-                                s.search,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                          ),
                         ),
                       ),
                       SizedBox(height: 7.h),
@@ -350,7 +350,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                 ],
                               ),
                               SizedBox(height: 1.h),
-                              if (provider.isLoading)
+                              if (provider.isLoading || provider.isLoadingTopRestaurants)
                                 Container(
                                   height: 200.h,
                                   child: Center(
@@ -359,12 +359,12 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                     ),
                                   ),
                                 )
-                              else if (provider.categoryDisplayNames.isEmpty)
+                              else if (provider.topRestaurants.isEmpty)
                                 Container(
                                   height: 200.h,
                                   child: Center(
                                     child: Text(
-                                      'لا توجد مطاعم متاحة حالياً',
+                                      s.no_restaurants_found,
                                       style: TextStyle(
                                         color: Colors.grey,
                                         fontSize: 14.sp,
@@ -374,61 +374,83 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                 )
                               else
                                 Column(
-                                  children: List.generate(
-                                    min(provider.categoryDisplayNames.length, 3),
-                                    (sectionIndex) {
-                                      final categoryName = provider.categoryDisplayNames[sectionIndex];
-                                      return Column(
-                                        children: [
-                                          Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              horizontal: 8.w,
-                                              vertical: 8.h,
-                                            ),
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Text(
-                                                   categoryName ?? "مطعم مميز",
-                                                   style: TextStyle(
-                                                     fontSize: 14.sp,
-                                                     fontWeight: FontWeight.w600,
-                                                     color: KTextColor,
-                                                   ),
+                                  children: provider.topRestaurants.map((advertiser) {
+                                    print('=== Processing advertiser: ${advertiser.name} ===');
+                                    print('Total ads for ${advertiser.name}: ${advertiser.ads.length}');
+                                    
+                                    // فلترة الإعلانات للحصول على إعلانات المطاعم فقط
+                                    final restaurantAds = advertiser.ads.where((ad) {
+                                      final category = ad.category?.toLowerCase();
+                                      print('Ad: ${ad.title}, Category: $category');
+                                      final isRestaurant = category == 'restaurant' || category == 'restaurants';
+                                      print('Is restaurant ad: $isRestaurant');
+                                      return isRestaurant;
+                                    }).toList();
+
+                                    print('Restaurant ads found for ${advertiser.name}: ${restaurantAds.length}');
+                                    
+                                    if (restaurantAds.isEmpty) {
+                                      print('No restaurant ads found for ${advertiser.name}, hiding advertiser');
+                                      return SizedBox.shrink();
+                                    }
+                                    
+                                    print('Showing ${restaurantAds.length} restaurant ads for ${advertiser.name}');
+                                    
+                                    return Column(
+                                      children: [
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 8.w,
+                                            vertical: 8.h,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                 advertiser.name,
+                                                 style: TextStyle(
+                                                   fontSize: 14.sp,
+                                                   fontWeight: FontWeight.w600,
+                                                   color: KTextColor,
                                                  ),
-                                                const Spacer(),
-                                                InkWell(
-                                                  onTap: () {
-                                                    context.push('/AllAddsRestaurant');
-                                                  },
-                                                  child: Text(
-                                                    s.see_all_ads,
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      decoration: TextDecoration.underline,
-                                                      decorationColor: borderColor,
-                                                      color: borderColor,
-                                                      fontWeight: FontWeight.w500,
-                                                    ),
+                                               ),
+                                              const Spacer(),
+                                              InkWell(
+                                                onTap: () {
+                                                  context.push('/AllAddsRestaurant');
+                                                },
+                                                child: Text(
+                                                  s.see_all_ads,
+                                                  style: TextStyle(
+                                                    fontSize: 14.sp,
+                                                    decoration: TextDecoration.underline,
+                                                    decorationColor: borderColor,
+                                                    color: borderColor,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
-                                              ],
-                                            ),
+                                              ),
+                                            ],
                                           ),
-                                          SizedBox(
-                                            height: 175,
-                                            width: double.infinity,
-                                            child: ListView.builder(
-                                              scrollDirection: Axis.horizontal,
-                                              itemCount: min(RestaurantDataDammy.length, 20),
-                                              padding:
-                                                  EdgeInsets.symmetric(horizontal: 5.w),
-                                              itemBuilder: (context, index) {
-                                                final ad = RestaurantDataDammy[index];
-                                                return Padding(
+                                        ),
+                                        SizedBox(
+                                          height: 175,
+                                          width: double.infinity,
+                                          child: ListView.builder(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount: min(restaurantAds.length, 8),
+                                            padding:
+                                                EdgeInsets.symmetric(horizontal: 5.w),
+                                            itemBuilder: (context, index) {
+                                              final ad = restaurantAds[index];
+                                              return GestureDetector(
+                                                onTap: () {
+                                                  context.push('/restaurant_details', extra: {'id': ad.id});
+                                                },
+                                                child: Padding(
                                                   padding: EdgeInsetsDirectional.only(
-                                                    end: index == RestaurantDataDammy.length - 1 ? 0 : 4.w,
+                                                    end: index == restaurantAds.length - 1 ? 0 : 4.w,
                                                   ),
                                                   child: Container(
                                                     width: 145,
@@ -456,12 +478,35 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                                             ClipRRect(
                                                               borderRadius:
                                                                   BorderRadius.circular(4.r),
-                                                              child: Image.asset(
-                                                                ad.image,
-                                                                height: 94.h,
-                                                                width: double.infinity,
-                                                                fit: BoxFit.cover,
-                                                              ),
+                                                              child: ad.images.isNotEmpty
+                                                                ? CachedNetworkImage(
+                                                                    imageUrl: ImageUrlHelper.getFullImageUrl(ad.images.first),
+                                                                    height: 94.h,
+                                                                    width: double.infinity,
+                                                                    fit: BoxFit.cover,
+                                                                    placeholder: (context, url) => Container(
+                                                                      height: 94.h,
+                                                                      width: double.infinity,
+                                                                      color: Colors.grey.shade200,
+                                                                      child: Center(
+                                                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                                                      ),
+                                                                    ),
+                                                                    errorWidget: (context, url, error) {
+                                                                      // في حال فشل تحميل الصورة، لا نعرض أيقونة وهمية
+                                                                      return Container(
+                                                                        height: 94.h,
+                                                                        width: double.infinity,
+                                                                        color: Colors.grey.shade200,
+                                                                      );
+                                                                    },
+                                                                  )
+                                                                : Container(
+                                                                    // عند عدم توفر صور، اعرض خلفية محايدة بدون أيقونة وهمية
+                                                                    height: 94.h,
+                                                                    width: double.infinity,
+                                                                    color: Colors.grey.shade200,
+                                                                  ),
                                                             ),
                                                             Positioned(
                                                               top: 8,
@@ -485,7 +530,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                                                       .spaceEvenly,
                                                               children: [
                                                                 Text(
-                                                                  ad.price,
+                                                                  '${ad.priceRange ?? '0'} AED',
                                                                   style: TextStyle(
                                                                     color: Colors.red,
                                                                     fontWeight:
@@ -494,7 +539,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                                                   ),
                                                                 ),
                                                                 Text(
-                                                                  ad.title,
+                                                                  ad.title ?? 'مطعم مميز',
                                                                   maxLines: 1,
                                                                   overflow:
                                                                       TextOverflow.ellipsis,
@@ -506,7 +551,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                                                   ),
                                                                 ),
                                                                 Text(
-                                                                  ad.location,
+                                                                  '${ad.emirate ?? ''}, ${ad.district ?? ''}',
                                                                   style: TextStyle(
                                                                     fontSize: 11.5.sp,
                                                                     color:
@@ -523,14 +568,14 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                                       ],
                                                     ),
                                                   ),
-                                                );
-                                              },
-                                            ),
+                                                ),
+                                              );
+                                            }
                                           ),
-                                        ],
-                                      );
-                                    },
-                                  ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
                                 ),
                             ],
                           );
@@ -544,165 +589,6 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// ++++         ودجت بناء الحقول المعاد استخدامها             ++++
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Widget _buildSingleSelectField(BuildContext context, String title, String? selectedValue, List<String> allItems, Function(String?) onConfirm, {bool isLoading = false}) {
-  final s = S.of(context);
-  String displayText = isLoading
-      ? "Loading..."
-      : selectedValue == null
-          ? title
-          : selectedValue!;
-  
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: 8.w),
-    child: GestureDetector(
-      onTap: isLoading
-          ? null
-          : () async {
-              final result = await showModalBottomSheet<String>(
-                context: context,
-                backgroundColor: Colors.white,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(20))),
-                builder: (context) => _SingleSelectBottomSheet(
-                    title: title,
-                    items: allItems,
-                    initialSelection: selectedValue),
-              );
-              onConfirm(result);
-            },
-      child: Container(
-        height: 48,
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: borderColor),
-            borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(displayText,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: selectedValue == null || isLoading
-                          ? Colors.grey.shade500
-                          : KTextColor,
-                      fontSize: 12.sp),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1),
-            ),
-            if (isLoading)
-              const SizedBox(
-                  width: 15,
-                  height: 15,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// ++++                اللوحات السفلية (Bottom Sheets)         ++++
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-class _SingleSelectBottomSheet extends StatefulWidget {
-  final String title;
-  final List<String> items;
-  final String? initialSelection;
-
-  const _SingleSelectBottomSheet({
-    required this.title,
-    required this.items,
-    this.initialSelection,
-  });
-
-  @override
-  _SingleSelectBottomSheetState createState() => _SingleSelectBottomSheetState();
-}
-
-class _SingleSelectBottomSheetState extends State<_SingleSelectBottomSheet> {
-  String? _selectedItem;
-  late TextEditingController _searchController;
-  late List<String> _filteredItems;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedItem = widget.initialSelection;
-    _searchController = TextEditingController();
-    _filteredItems = List.from(widget.items);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _filterItems(String query) {
-    setState(() {
-      _filteredItems = widget.items
-          .where((item) => item.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Text(
-            widget.title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _searchController,
-            onChanged: _filterItems,
-            decoration: InputDecoration(
-              hintText: s.search,
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _filteredItems.length,
-              itemBuilder: (context, index) {
-                final item = _filteredItems[index];
-                final isSelected = _selectedItem == item;
-                return RadioListTile<String>(
-                  title: Text(item),
-                  value: item,
-                  groupValue: _selectedItem,
-                  onChanged: (String? value) {
-                    setState(() {
-                      _selectedItem = value;
-                    });
-                    Navigator.of(context).pop(value);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }

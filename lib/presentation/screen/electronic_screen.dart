@@ -1,13 +1,18 @@
 import 'dart:math';
-import 'package:advertising_app/data/electronic_dummy_data.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:advertising_app/presentation/widget/custom_category.dart';
+import 'package:advertising_app/presentation/widget/unified_dropdown.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:advertising_app/presentation/providers/electronics_info_provider.dart';
+import 'package:advertising_app/data/model/best_electronics_advertiser_model.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -24,9 +29,9 @@ class ElectronicScreen extends StatefulWidget {
 class _ElectronicScreenState extends State<ElectronicScreen> {
   int _selectedIndex = 2;
 
-  // +++ تم تحويل المتغيرات لدعم الاختيار المتعدد +++
-  List<String> _selectedEmirates = [];
-  List<String> _selectedSectionTypes = [];
+  // ++ تحويل المتغيرات لاختيار فردي بدل متعدد ++
+  String? _selectedEmirate;
+  String? _selectedSectionType;
 
   List<String> get categories => [
         S.of(context).carsales,
@@ -49,6 +54,16 @@ class _ElectronicScreenState extends State<ElectronicScreen> {
         S.of(context).restaurants: "/restaurants",
         S.of(context).otherservices: "/otherServices",
       };
+
+  @override
+  void initState() {
+    super.initState();
+    // اجلب بيانات الإمارات، أنواع الأقسام، وأفضل المعلنين عند فتح الشاشة
+    Future.microtask(() {
+      final provider = Provider.of<ElectronicsInfoProvider>(context, listen: false);
+      provider.fetchAllData();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -119,8 +134,19 @@ class _ElectronicScreenState extends State<ElectronicScreen> {
                 SizedBox(height: 2.h),
                 Padding(
                   padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                  child: Column(
-                    children: [
+                  child: Consumer<ElectronicsInfoProvider>(
+                    builder: (context, electronicsInfo, _) {
+                      // احصل على القوائم الحقيقية من الـ Repository عبر الـ Provider وأضف خيار "All"
+                      final emirateItems = [
+                        'All',
+                        ...electronicsInfo.emirateDisplayNames,
+                      ];
+                      final sectionTypeItems = [
+                        'All',
+                        ...electronicsInfo.sectionTypes,
+                      ];
+                      return Column(
+                        children: [
                       Row(
                         children: [
                           Icon(Icons.star, color: Colors.amber, size: 20.sp),
@@ -136,33 +162,46 @@ class _ElectronicScreenState extends State<ElectronicScreen> {
                         ],
                       ),
                       SizedBox(height: 4.h),
-                     
-                      _buildMultiSelectField(context, s.emirate, _selectedEmirates, 
-                        ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"], 
-                        (selection) => setState(() => _selectedEmirates = selection)),
-                     
+                      UnifiedDropdown<String>(
+                        title: s.emirate,
+                        selectedValue: _selectedEmirate,
+                        items: emirateItems.isNotEmpty ? emirateItems : const <String>[],
+                        onConfirm: (selection) => setState(() => _selectedEmirate = selection),
+                      ),
                       SizedBox(height: 3.h),
-                     
-                      _buildMultiSelectField(context, s.section_type, _selectedSectionTypes,
-                        ["Mobiles", "Laptops", "Home Appliances", "Cameras", "Video Games"], 
-                        (selection) => setState(() => _selectedSectionTypes = selection)),
+                      UnifiedDropdown<String>(
+                        title: s.section_type,
+                        selectedValue: _selectedSectionType,
+                        items: sectionTypeItems.isNotEmpty ? sectionTypeItems : const <String>[],
+                        onConfirm: (selection) => setState(() => _selectedSectionType = selection),
+                      ),
                       
                       SizedBox(height: 4.h),
-                      Padding(
-                        padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                        child: GestureDetector(
-                          onTap: () => context.push('/electronic_search'),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: KPrimaryColor,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            height: 43, width: double.infinity,
-                            child: Center(
-                              child: Text(s.search, style: const TextStyle(color: Colors.white, fontSize: 16)),
-                            ),
-                          ),
-                        ),
+                      UnifiedSearchButton(
+                        onPressed: () {
+                          // تحقق من صحة الإدخال: يجب اختيار الإمارة ونوع القسم قبل الانتقال
+                          if ((_selectedEmirate == null || _selectedEmirate!.isEmpty) ||
+                              (_selectedSectionType == null || _selectedSectionType!.isEmpty)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('يرجى اختيار الإمارة ونوع القسم أولاً'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // حضّر الفلاتر للإرسال إلى صفحة البحث
+                          final Map<String, String> filters = {};
+                          if (_selectedEmirate != null && _selectedEmirate != 'All') {
+                            filters['emirate'] = _selectedEmirate!;
+                          }
+                          if (_selectedSectionType != null && _selectedSectionType != 'All') {
+                            filters['section_type'] = _selectedSectionType!;
+                          }
+
+                          context.push('/electronic_search', extra: filters);
+                        },
                       ),
                       SizedBox(height: 7.h),
                       Padding(
@@ -198,87 +237,143 @@ class _ElectronicScreenState extends State<ElectronicScreen> {
                           SizedBox(width: 4.w),
                           Icon(Icons.star, color: Colors.amber, size: 20.sp),
                           SizedBox(width: 4.w),
-                          Text( s.top_premium_dealers, style: TextStyle( fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor,)),
+                          Text(s.top_premium_dealers, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
                         ],
                       ),
                       SizedBox(height: 1.h),
-                      Column(
-                        children: List.generate(3, (sectionIndex) {
-                          return Column(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.symmetric( horizontal: 8.w, vertical: 8.h),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text( "Sharaf DG", style: TextStyle( fontSize: 16.sp, fontWeight: FontWeight.w600, color: KTextColor)),
-                                    const Spacer(),
-                                    InkWell(
-                                      onTap: () { context.push('/AllAddsElectronic');},
-                                      child: Text( s.see_all_ads,
-                                        style: TextStyle( fontSize: 14.sp, decoration: TextDecoration.underline, decorationColor: borderColor, color: borderColor, fontWeight: FontWeight.w500),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(
-                                height: 175,
-                                width: double.infinity,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: min(ElectronicDummyData.length, 20),
-                                  padding: EdgeInsets.symmetric(horizontal: 5.w),
-                                  itemBuilder: (context, index) {
-                                    final ad = ElectronicDummyData[index];
-                                    return Padding(
-                                      padding: EdgeInsetsDirectional.only(end: index == ElectronicDummyData.length - 1 ? 0 : 4.w),
-                                      child: Container(
-                                        width: 145,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white, borderRadius: BorderRadius.circular(4.r), border: Border.all(color: Colors.grey.shade300),
-                                          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.15), blurRadius: 5.r, offset: Offset(0, 2.h))],
+                      if (electronicsInfo.isLoading)
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16.h),
+                          child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: KPrimaryColor, strokeWidth: 2))),
+                        )
+                      else if (electronicsInfo.error != null)
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12.h),
+                          child: Text(electronicsInfo.error!, style: TextStyle(color: Colors.red, fontSize: 12.sp)),
+                        )
+                      else
+                        Column(
+                          children: electronicsInfo.bestAdvertisers.map((BestElectronicsAdvertiser advertiser) {
+                            final ads = advertiser.latestAds;
+                            return Column(
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(advertiser.advertiserName, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: KTextColor)),
+                                      const Spacer(),
+                                      InkWell(
+                                        onTap: () { context.push('/AllAddsElectronic'); },
+                                        child: Text(
+                                          s.see_all_ads,
+                                          style: TextStyle(fontSize: 14.sp, decoration: TextDecoration.underline, decorationColor: borderColor, color: borderColor, fontWeight: FontWeight.w500),
                                         ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Stack(
-                                              children: [
-                                                ClipRRect(borderRadius: BorderRadius.circular(4.r),
-                                                  child: Image.asset(ad.image, height: 94.h, width: double.infinity, fit: BoxFit.cover),
-                                                ),
-                                                Positioned( top: 8, right: 8, child: Icon(Icons.favorite_border, color: Colors.grey.shade300)),
-                                              ],
-                                            ),
-                                            Expanded(
-                                              child: Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 6.w),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                                  children: [
-                                                    Text( ad.price, style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 11.5.sp)),
-                                                    Text( ad.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5.sp, color: KTextColor)),
-                                                    Text( ad.location,
-                                                      style: TextStyle(fontSize: 11.5.sp, color: const Color.fromRGBO(165, 164, 162, 1), fontWeight: FontWeight.w600)),
-                                                  ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  height: 175,
+                                  width: double.infinity,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: min(ads.length, 20),
+                                    padding: EdgeInsets.symmetric(horizontal: 5.w),
+                                    itemBuilder: (context, index) {
+                                      final ad = ads[index];
+                                      final imageUrl = ad.mainImageUrl.isNotEmpty ? ad.mainImageUrl : '';
+                                      final priceText = (ad.price).toString();
+                                      final titleText = (ad.productName.isNotEmpty ? ad.productName : ad.title);
+                                      final locationText = [ad.emirate, ad.district]
+                                          .where((p) => p.isNotEmpty)
+                                          .join(' ');
+                                      return Padding(
+                                        padding: EdgeInsetsDirectional.only(end: index == ads.length - 1 ? 0 : 4.w),
+                                        child: Container(
+                                          width: 145,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(4.r),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.15), blurRadius: 5.r, offset: Offset(0, 2.h))],
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Stack(
+                                                children: [
+                                                  ClipRRect(
+                                                    borderRadius: BorderRadius.circular(4.r),
+                                                    child: imageUrl.isNotEmpty
+                                                        ? CachedNetworkImage(
+                                                            imageUrl: ImageUrlHelper.getFullImageUrl(imageUrl),
+                                                            height: 94.h,
+                                                            width: double.infinity,
+                                                            fit: BoxFit.cover,
+                                                            placeholder: (context, url) => Container(
+                                                              color: Colors.grey[300],
+                                                              child: const Center(
+                                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                                              ),
+                                                            ),
+                                                            errorWidget: (context, url, error) => Container(
+                                                              height: 94.h,
+                                                              width: double.infinity,
+                                                              color: Colors.grey.shade200,
+                                                              child: Icon(Icons.image_not_supported, color: Colors.grey, size: 28.sp),
+                                                            ),
+                                                          )
+                                                        : Container(
+                                                            height: 94.h,
+                                                            width: double.infinity,
+                                                            color: Colors.grey.shade200,
+                                                            child: Icon(Icons.image_not_supported, color: Colors.grey, size: 28.sp),
+                                                          ),
+                                                  ),
+                                                  Positioned(top: 8, right: 8, child: Icon(Icons.favorite_border, color: Colors.grey.shade300)),
+                                                ],
+                                              ),
+                                              Expanded(
+                                                child: Padding(
+                                                  padding: EdgeInsets.symmetric(horizontal: 6.w),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                                    children: [
+                                                      Text("${NumberFormatter.formatPrice(priceText)}", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 11.5.sp)),
+                                                      Text(
+                                                        titleText,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5.sp, color: KTextColor),
+                                                      ),
+                                                      Text(
+                                                        locationText,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(fontSize: 11.5.sp, color: const Color.fromRGBO(165, 164, 162, 1), fontWeight: FontWeight.w600),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
-                          );
-                        }),
-                      ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
                       SizedBox(height: 16.h),
-                    ],
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -289,143 +384,4 @@ class _ElectronicScreenState extends State<ElectronicScreen> {
     );
   }
 
-}
-
-Widget _buildMultiSelectField(BuildContext context, String title, List<String> selectedValues, List<String> allItems, Function(List<String>) onConfirm) {
-    final s = S.of(context);
-    String displayText = selectedValues.isEmpty ? title : selectedValues.join(', ');
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8.w),
-      child: GestureDetector(
-        onTap: () async {
-          final result = await showModalBottomSheet<List<String>>(
-            context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            builder: (context) => _MultiSelectBottomSheet(title: title, items: allItems, initialSelection: selectedValues),
-          );
-          if (result != null) { onConfirm(result); }
-        },
-        child: Container(
-          height: 48, width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.centerLeft,
-          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)),
-          child: Text(
-            displayText,
-            style: TextStyle(
-              fontWeight: selectedValues.isEmpty ? FontWeight.normal : FontWeight.w500,
-              color: selectedValues.isEmpty ? Colors.grey.shade500 : KTextColor,
-              fontSize: 12
-            ),
-            overflow: TextOverflow.ellipsis, maxLines: 1,
-          ),
-        ),
-      ),
-    );
-}
-
-class _MultiSelectBottomSheet extends StatefulWidget {
-  final String title; final List<String> items; final List<String> initialSelection;
-  const _MultiSelectBottomSheet({Key? key, required this.title, required this.items, required this.initialSelection}) : super(key: key);
-  @override
-  _MultiSelectBottomSheetState createState() => _MultiSelectBottomSheetState();
-}
-class _MultiSelectBottomSheetState extends State<_MultiSelectBottomSheet> {
-  late final List<String> _selectedItems;
-  final TextEditingController _searchController = TextEditingController();
-  List<String> _filteredItems = [];
-  @override
-  void initState() {
-    super.initState();
-    _selectedItems = List.from(widget.initialSelection);
-    _filteredItems = List.from(widget.items);
-    _searchController.addListener(_filterItems);
-  }
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-  void _filterItems() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      _filteredItems = widget.items.where((item) => item.toLowerCase().contains(query)).toList();
-    });
-  }
-  void _onItemTapped(String item) {
-    setState(() {
-      if (_selectedItems.contains(item)) { _selectedItems.remove(item); } 
-      else { _selectedItems.add(item); }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    
-    return Theme(
-      data: Theme.of(context).copyWith(
-        checkboxTheme: CheckboxThemeData(
-          side: MaterialStateBorderSide.resolveWith(
-            (_) => BorderSide(width: 1.0, color: borderColor),
-          ),
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(widget.title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp, color: KTextColor)),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _searchController,
-                  style: TextStyle(color: KTextColor), 
-                  decoration: InputDecoration(
-                    hintText: s.search, prefixIcon: Icon(Icons.search, color: KTextColor),
-                    hintStyle: TextStyle(color: KTextColor.withOpacity(0.5)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-                  ),
-                ),
-                const SizedBox(height: 8), const Divider(),
-                Expanded(
-                  child: _filteredItems.isEmpty 
-                    ? Center(child: Text(s.noResultsFound, style: TextStyle(color: KTextColor)))
-                    : ListView.builder(
-                        itemCount: _filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = _filteredItems[index];
-                          return CheckboxListTile(
-                            title: Text(item, style: TextStyle(color: KTextColor)),
-                            value: _selectedItems.contains(item),
-                            activeColor: KPrimaryColor,
-                            checkColor: Colors.white,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            onChanged: (_) => _onItemTapped(item),
-                          );
-                        },
-                      ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, _selectedItems),
-                    child: Text(s.apply),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: KPrimaryColor, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16),
-                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

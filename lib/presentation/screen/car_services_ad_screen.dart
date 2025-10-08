@@ -17,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -63,21 +64,19 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final token = await const FlutterSecureStorage().read(key: 'auth_token');
-      if (token != null && mounted) {
-        // جلب جميع البيانات اللازمة لهذه الشاشة
-        final infoProvider = context.read<CarServicesInfoProvider>();
-        await infoProvider.fetchAllData(token: token);
-        
-        // طباعة البيانات المحملة للتحقق
-        print('Advertiser Names Loaded: ${infoProvider.advertiserNames}');
-        print('Phone Numbers Loaded: ${infoProvider.phoneNumbers}');
-        print('Locations Loaded: ${infoProvider.locations}');
-        
-        // التحقق من بيانات البروفايل
-        final authProvider = context.read<AuthProvider>();
-        await _checkUserProfileData(authProvider);
-      }
+      if (!mounted) return;
+      // جلب جميع البيانات اللازمة لهذه الشاشة (بيانات عامة لا تتطلب توكن)
+      final infoProvider = context.read<CarServicesInfoProvider>();
+      await infoProvider.fetchAllData();
+
+      // طباعة البيانات المحملة للتحقق
+      print('Advertiser Names Loaded: ${infoProvider.advertiserNames}');
+      print('Phone Numbers Loaded: ${infoProvider.phoneNumbers}');
+      print('Locations Loaded: ${infoProvider.locations}');
+
+      // التحقق من بيانات البروفايل
+      final authProvider = context.read<AuthProvider>();
+      await _checkUserProfileData(authProvider);
     });
   }
   
@@ -459,7 +458,7 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
                             _buildSingleSelectField(context, s.serviceType, selectedServiceType, infoProvider.serviceTypeNames, (selection) {
                                 setState(() => selectedServiceType = selection);
                              }, isRequired: true),
-                            _buildTitledTextFormField(s.serviceName, _serviceNameController, borderColor, currentLocale, hintText: "Change Oil", isRequired: true),
+                            _buildTitledTextFormField(s.serviceName, _serviceNameController, borderColor, currentLocale, hintText: "Enter name", isRequired: true),
                           _buildTitledTextFormField(s.price, _priceController, borderColor, currentLocale, hintText: '300', isNumber: true, isRequired: true),
                 
                          
@@ -468,7 +467,7 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
                           ]),
                            const SizedBox(height: 7),
                           
-                          _buildTitledTextFormField(s.title, _titleController, borderColor, currentLocale, hintText: "Change Oil With Good Quality", minLines: 3, maxLines: 3, isRequired: true),
+                          _buildTitledTextFormField(s.title, _titleController, borderColor, currentLocale, hintText: "Enter your title", minLines: 2, maxLines: 2, isRequired: true),
                           const SizedBox(height: 7),
                           
                            Consumer<CarServicesInfoProvider>(
@@ -616,16 +615,28 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
   Widget _buildFormRow(List<Widget> children) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children.map((child) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4.0), child: child))).toList());
   }
-  Widget _buildTitledTextFormField(String title, TextEditingController controller, Color borderColor, String currentLocale, {bool isNumber = false, String? hintText, int minLines = 1, int? maxLines, bool isRequired = false}) {
+  Widget _buildTitledTextFormField(String title, TextEditingController controller, Color borderColor, String currentLocale, {bool isNumber = false, String? hintText, int minLines = 1, int maxLines =1, bool isRequired = false}) {
      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4),
         TextFormField(
             controller: controller,
-            minLines: minLines, 
-            maxLines: maxLines ?? (minLines > 1 ? minLines + 2 : 1),
+            minLines: minLines,
+        maxLines: maxLines,
+        maxLength: maxLines > 1 ? 90 : null,
+        maxLengthEnforcement: MaxLengthEnforcement.enforced,
             style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
             textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
             keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+            inputFormatters: title == S.of(context).title && maxLines == 2 ? [
+              TextInputFormatter.withFunction((oldValue, newValue) {
+                // منع إدخال أكثر من سطرين عبر فواصل الأسطر
+                final lineCount = newValue.text.split('\n').length;
+                if (lineCount > 2) {
+                  return oldValue;
+                }
+                return newValue;
+              })
+            ] : null,
             validator: isRequired ? (value) {
                 if (value == null || value.trim().isEmpty) return 'This field is required';
                 return null;

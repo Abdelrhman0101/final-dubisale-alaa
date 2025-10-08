@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:advertising_app/data/web_services/api_service.dart';
 import 'package:advertising_app/data/model/car_specs_model.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class CarSalesInfoProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   
   CarSalesInfoProvider();
 
@@ -65,7 +67,7 @@ class CarSalesInfoProvider extends ChangeNotifier {
   final List<String> _defaultSeatsNumbers = ['2', '4', '5', '7', '8'];
   final List<String> _defaultSteeringSides = ['Left', 'Right'];
   final List<String> _defaultAdvertiserTypes = ['Individual', 'Dealer', 'Company'];
-  final List<String> _defaultAdvertiserNames = ['Ahmed Ali', 'Sara Mohamed', 'Dubai Motors'];
+  final List<String> _defaultAdvertiserNames = [''];
   final List<String> _defaultPhoneNumbers = ['+971501234567', '+971509876543', '+971507654321'];
   final List<String> _defaultWhatsappNumbers = ['+971501234567', '+971509876543', '+971507654321'];
   final List<String> _defaultEmirates = ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain'];
@@ -186,7 +188,8 @@ class CarSalesInfoProvider extends ChangeNotifier {
     safeNotifyListeners();
 
     try {
-      final response = await _apiService.get('/api/car-sales-ad-specs', token: token);
+      // بيانات عامة - لا حاجة لتوكن
+      final response = await _apiService.get('/api/car-sales-ad-specs');
       final carSpecsResponse = CarSpecsResponse.fromJson(response);
       
       if (carSpecsResponse.success) {
@@ -211,7 +214,8 @@ class CarSalesInfoProvider extends ChangeNotifier {
     safeNotifyListeners();
 
     try {
-      final response = await _apiService.get('/api/contact-info', token: token);
+      // بيانات عامة - لا حاجة لتوكن
+      final response = await _apiService.get('/api/contact-info');
       
       if (response['success'] == true && response['data'] != null) {
         final data = response['data'];
@@ -247,13 +251,16 @@ class CarSalesInfoProvider extends ChangeNotifier {
     safeNotifyListeners();
 
     try {
+      // استخدام التوكن الجديد من التحقق
+      final authToken = token ?? await _storage.read(key: 'verify_account_token') ?? await _storage.read(key: 'auth_token');
+      
       final response = await _apiService.post(
         '/api/contact-info/add-item',
         data: {
           'field': field,
           'value': value,
         },
-        token: token,
+        token: authToken,
       );
       
       if (response['success'] == true) {

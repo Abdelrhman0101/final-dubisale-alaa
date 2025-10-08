@@ -4,6 +4,7 @@ import 'package:advertising_app/data/model/real_estate_model.dart';
 
 final List<RealEstateModel> RealEstateDummyData = [
   RealEstateModel(
+    'Dubai', 'Jumeira', '2000 sqft', 'Villa', 'Rent',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',
@@ -21,6 +22,7 @@ final List<RealEstateModel> RealEstateDummyData = [
     ],
   ),
   RealEstateModel(
+    'Dubai', 'Jumeira', '3000 sqft', 'Villa', 'Rent',
     image: 'assets/images/house.png',
     price: 'AED 75000',
     title: 'Luxury Villa For Monthly Rent',
@@ -38,6 +40,7 @@ final List<RealEstateModel> RealEstateDummyData = [
     ],
   ),
 RealEstateModel(
+    'Dubai', 'Jumeira', '1500 sqft', 'Villa', 'Rent',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',
@@ -56,6 +59,7 @@ RealEstateModel(
   ),
 
   RealEstateModel(
+    'Dubai', 'Marina', '2500 sqft', 'Apartment', 'Rent',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',
@@ -74,6 +78,7 @@ RealEstateModel(
   ),
   
   RealEstateModel(
+    'Abu Dhabi', 'Corniche', '1800 sqft', 'Villa', 'Sale',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',
@@ -91,6 +96,7 @@ RealEstateModel(
     ],
   ),
 RealEstateModel(
+    'Sharjah', 'Al Majaz', '2200 sqft', 'Townhouse', 'Rent',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',
@@ -109,6 +115,7 @@ RealEstateModel(
   ),
 
   RealEstateModel(
+    'Dubai', 'Downtown', '3500 sqft', 'Penthouse', 'Sale',
     image: 'assets/images/house.png',
     price: 'AED 2000',
     title: 'Luxury Villa For Monthly Rent',

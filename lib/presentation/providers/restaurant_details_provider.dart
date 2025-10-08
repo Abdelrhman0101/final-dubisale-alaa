@@ -27,12 +27,8 @@ class RestaurantDetailsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) {
-        throw Exception('Authentication token not found');
-      }
-
-      _adDetails = await _repository.getRestaurantAdDetails(adId: adId, token: token);
+      // Public data - no token required for viewing restaurant ad details
+      _adDetails = await _repository.getRestaurantAdDetails(adId: adId);
 
     } catch (e) {
       _error = e.toString();

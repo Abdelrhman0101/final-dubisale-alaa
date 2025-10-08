@@ -1,17 +1,28 @@
 import 'package:advertising_app/generated/l10n.dart';
-import 'package:advertising_app/data/model/real_estate_model.dart';
+import 'package:advertising_app/data/model/real_estate_ad_model.dart';
+import 'package:advertising_app/presentation/providers/real_estate_details_provider.dart';
+import 'package:advertising_app/presentation/screen/car_rent_ads_screen.dart';
+import 'package:advertising_app/utils/phone_number_formatter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:advertising_app/constant/string.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
+import 'package:advertising_app/constant/my_color.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:advertising_app/presentation/widget/location_map.dart';
 import 'package:readmore/readmore.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:external_app_launcher/external_app_launcher.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
 
 class RealEstateDetailsScreen extends StatefulWidget {
-  final RealEstateModel real_estate;
-  const RealEstateDetailsScreen({super.key, required this.real_estate});
+  final String adId;
+  const RealEstateDetailsScreen({super.key, required this.adId});
 
   @override
   State<RealEstateDetailsScreen> createState() =>
@@ -26,6 +37,11 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    
+    // Fetch real estate details when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<RealEstateDetailsProvider>().fetchRealEstateDetails(widget.adId);
+    });
   }
 
   @override
@@ -41,7 +57,6 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
       statusBarIconBrightness: Brightness.dark,
       statusBarBrightness: Brightness.light,
     ));
-    final RealEstate = widget.real_estate;
     final isArabic = Localizations.localeOf(context).languageCode == 'ar';
 
     return Directionality(
@@ -49,30 +64,142 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
       child: SafeArea(
         top: false,
         child: Scaffold(
-          extendBodyBehindAppBar: true, // يخلي الخلفية ورا الستاتس بار
-
-          backgroundColor: Colors.white, // اجعل خلفية الـ Scaffold شفافة
-
-          body: SingleChildScrollView(
-            child: Column(
-              children: [
-                Stack(
-                  children: [
-                    SizedBox(
-                      height: 238.h,
-                      width: double.infinity,
-                      child: PageView.builder(
-                        controller: _pageController,
-                        itemCount:  RealEstate.images.length,
-                        onPageChanged: (index) =>
-                            setState(() => _currentPage = index),
-                        itemBuilder: (context, index) => Image.asset(
-                           RealEstate.images[index],
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
+          extendBodyBehindAppBar: true,
+          backgroundColor: Colors.white,
+          body: Consumer<RealEstateDetailsProvider>(
+            builder: (context, provider, child) {
+              if (provider.isLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              if (provider.error != null) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Error: ${provider.error}'),
+                      ElevatedButton(
+                        onPressed: () => provider.fetchRealEstateDetails(widget.adId),
+                        child: Text('Retry'),
                       ),
-                    ),
+                    ],
+                  ),
+                );
+              }
+              
+              final realEstate = provider.realEstateDetails;
+              if (realEstate == null) {
+                return const Center(child: Text('No data available'));
+              }
+              
+              return _buildContent(realEstate, isArabic);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(RealEstateAdModel realEstate, bool isArabic) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              SizedBox(
+                height: 290.h,
+                width: double.infinity,
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: _getOrderedImages(realEstate).length,
+                  onPageChanged: (index) =>
+                      setState(() => _currentPage = index),
+                  itemBuilder: (context, index) {
+                    final imageUrl = _getOrderedImages(realEstate)[index];
+                    final fullImageUrl = ImageUrlHelper.getFullImageUrl(imageUrl ?? '');
+                    
+                    // Enhanced debugging for image loading
+                    print('🖼️ Image Debug Info:');
+                    print('   Index: $index');
+                    print('   Original URL: $imageUrl');
+                    print('   Full URL: $fullImageUrl');
+                    print('   Images array length: ${_getOrderedImages(realEstate).length}');
+                    print('   Images array: ${_getOrderedImages(realEstate)}');
+                    
+                    return fullImageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: fullImageUrl,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: (context, url) {
+                              print('🔄 Loading image: $url');
+                              return Container(
+                                color: Colors.grey[300],
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: KPrimaryColor,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorWidget: (context, error, stackTrace) {
+                              // Enhanced error logging
+                              print('❌ ========== IMAGE LOADING ERROR ==========');
+                              print('❌ Error: $error');
+                              print('❌ Error Type: ${error.runtimeType}');
+                              print('❌ Image URL: $fullImageUrl');
+                              print('❌ Original path: $imageUrl');
+                              print('❌ Index: $index');
+                              print('❌ Stack trace: $stackTrace');
+                              print('❌ ==========================================');
+                              return Container(
+                                color: Colors.grey[300],
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error, color: Colors.red, size: 40),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'فشل في تحميل الصورة',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12.sp,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Error: ${error.toString()}',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 10.sp,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          )
+                        : Container(
+                            color: Colors.grey[300],
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.image, size: 40, color: Colors.grey),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'لا توجد صورة',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12.sp,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                  },
+                ),
+              ),
                     // Back button
                     Positioned(
                       top: 40.h,
@@ -132,9 +259,9 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                     Positioned(
                       bottom: 12.h,
                       left: MediaQuery.of(context).size.width / 2 -
-                          ( RealEstate.images.length * 10.w / 2),
+                           ((realEstate.thumbnailImages?.length ?? 1) * 10.w / 2),
                       child: Row(
-                        children: List.generate( RealEstate.images.length, (index) {
+                        children: List.generate(realEstate.thumbnailImages?.length ?? 1, (index) {
                           return Container(
                             margin: EdgeInsets.symmetric(horizontal: 2.w),
                             width: 7.w,
@@ -162,7 +289,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                         child: Text(
-                          '${_currentPage + 1}/${ RealEstate.images.length}',
+                          '${_currentPage + 1}/${_getOrderedImages(realEstate).length}',
                           style:
                               TextStyle(color: Colors.white, fontSize: 12.sp),
                         ),
@@ -190,7 +317,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                                 ),
                                 SizedBox(width: 6.w),
                                 Text(
-                                  widget.real_estate.price,
+                                  NumberFormatter.formatPrice(realEstate.price ?? '0'),
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16.sp,
@@ -199,60 +326,25 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                                 ),
                                 Spacer(),
                                 Text(
-                                  widget.real_estate.date,
+                                  _formatDate(realEstate.createdAt ?? ''),
                                   style: TextStyle(
-                                      color: Colors.grey, fontSize: 10.sp),
+                                      color: Colors.grey, fontSize: 12.sp,fontWeight: FontWeight.w400),
                                 ),
                               ],
                             ),
                             SizedBox(height: 6.h),
                             Text(
-                              widget.real_estate.title,
+                              realEstate.title ?? '',
                               style: TextStyle(
                                 fontSize: 16.sp,
                                 fontWeight: FontWeight.w600,
                                 color: KTextColor,
                               ),
                             ),
-                            // SizedBox(height: 6.h),
-                            // RichText(
-                            //   text: TextSpan(
-                            //     children:  RealEstate.line1.split(' ').map((word) {
-                            //       final parts = word.split(':');
-                            //       if (parts.length == 2) {
-                            //         return TextSpan(
-                            //           text: '${parts[0]}:',
-                            //           style: TextStyle(
-                            //             fontWeight: FontWeight.w600,
-                            //             color: KTextColor,
-                            //             fontSize: 14.sp,
-                            //           ),
-                            //           children: [
-                            //             TextSpan(
-                            //               text: '${parts[1]}',
-                            //               style: TextStyle(
-                            //                 fontWeight: FontWeight.w600,
-                            //                 color: KTextColor,
-                            //                 fontSize: 16.sp,
-                            //               ),
-                            //             ),
-                            //           ],
-                            //         );
-                            //       } else {
-                            //         return TextSpan(
-                            //           text: '$word ',
-                            //           style: const TextStyle(
-                            //             color: KTextColor,
-                            //             fontSize: 16,
-                            //           ),
-                            //         );
-                            //       }
-                            //     }).toList(),
-                            //   ),
-                            // ),
+                           
                             SizedBox(height: 6.h),
                             Text(
-                              widget.real_estate.details,
+                             "${realEstate.propertyType ?? ''} ${realEstate.contractType ?? ''}",
                               style: TextStyle(
                                 fontSize: 14.sp,
                                 color: KTextColor,
@@ -260,78 +352,36 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                               ),
                             ),
                             SizedBox(height: 6.h),
-                            Row(
-                              children: [
-                                SvgPicture.asset(
-                                  'assets/icons/locationicon.svg',
-                                  width: 20.w,
-                                  height: 18.h,
-                                ),
-                                SizedBox(width: 6.w),
-                                Expanded(
-                                  child: Text(
-                                    widget.real_estate.location,
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      color: KTextColor,
-                                      fontWeight: FontWeight.w500,
+                            
+                            Transform.translate(
+                              offset: Offset(-16.w, 0),
+                              child: Row(
+                                children: [
+                                  SizedBox(width: 6.h),
+                                  SvgPicture.asset(
+                                    'assets/icons/locationicon.svg',
+                                    width: 20.w,
+                                    height: 18.h,
+                                  ),
+                                  SizedBox(width: 6.w),
+                                  Expanded(
+                                    child: Text(
+                                      ('${realEstate.emirate ?? ''} ${realEstate.district ?? ''} ${realEstate.area ?? ''}').trim(),
+                                      style: TextStyle(
+                                        fontSize: 14.sp,
+                                        color: KTextColor,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                             SizedBox(height: 5.h),
                           ],
                         ),
                       ),
-                      // Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
-                      // Text(
-                      //   S.of(context).car_details,
-                      //   style: TextStyle(
-                      //     fontSize: 16.sp,
-                      //     fontWeight: FontWeight.w600,
-                      //     color: KTextColor,
-                      //   ),
-                      // ),
-                      // SizedBox(height: 5.h),
-                      // GridView(
-                      //   shrinkWrap: true,
-                      //   physics: NeverScrollableScrollPhysics(),
-                      //   padding: EdgeInsets.zero,
-                      //   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      //     crossAxisCount: 2,
-                      //     mainAxisExtent:
-                      //         MediaQuery.of(context).size.height * 0.1,
-                      //     crossAxisSpacing: 30.w,
-                      //   ),
-                      //   children: [
-                      //     _buildDetailBox(
-                      //         S.of(context).car_type, widget.real_estate.carType),
-                      //     _buildDetailBox(
-                      //         S.of(context).trans_type, widget.real_estate.transType),
-                      //     _buildDetailBox(
-                      //         S.of(context).color, widget.real_estate.color),
-                      //     _buildDetailBox(S.of(context).interior_color,
-                      //         widget.real_estate.interiorColor),
-                      //     _buildDetailBox(
-                      //         S.of(context).fuel_type, widget.real_estate.fuelType),
-                      //     _buildDetailBox(
-                      //         S.of(context).warranty, widget.real_estate.warranty),
-                      //     _buildDetailBox(S.of(context).doors_no,
-                      //         widget.real_estate.doors.toString()),
-                      //     _buildDetailBox(S.of(context).seats_no,
-                      //         widget.real_estate.seats.toString()),
-                      //     _buildDetailBox(S.of(context).engine_capacity,
-                      //         widget.real_estate.engineCapacity),
-                      //     _buildDetailBox(S.of(context).cylinders,
-                      //         widget.real_estate.cylinders.toString()),
-                      //     _buildDetailBox(
-                      //         S.of(context).horse_power, widget.real_estate.horsePower),
-                      //     _buildDetailBox(S.of(context).steering_side,
-                      //         widget.real_estate.steeringSide),
-                      //   ],
-                      // ),
-                      // SizedBox(height: 1.h),
+                      
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Text(
                         S.of(context).description,
@@ -348,8 +398,8 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                           children: [
                             Expanded(
                               child: ReadMoreText(
-                                "Amazing villa with luxury viewing",
-                                trimLines: 2,
+                               "${realEstate.description}",
+                                trimLines: 5,
                                 colorClickableText:
                                     Color.fromARGB(255, 9, 37, 108),
                                 trimMode: TrimMode.Line,
@@ -372,20 +422,11 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                                 ),
                               ),
                             )
-                            // Text(
-                            //   "20 % Down Payment With Insurance\n Registration And Delivery To \n Client Without Fees",
-                            //   textAlign: TextAlign.start,
-                            //   style:
-                            // TextStyle(
-                            //     fontSize: 14.sp,
-                            //     fontWeight: FontWeight.w500,
-                            //     color: KTextColor,
-                            //   ),
-                            // ),
+                            
                           ],
                         ),
                       ),
-                      SizedBox(height: 50.h),
+                      SizedBox(height: 2.h),
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Text(
                         S.of(context).location,
@@ -408,7 +449,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                             SizedBox(width: 8.w),
                             Expanded(
                               child: Text(
-                                widget.real_estate.location,
+                                '${realEstate.location ?? ''}'.trim(),
                                 style: TextStyle(
                                   fontSize: 14.sp,
                                   color: KTextColor,
@@ -420,33 +461,13 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                         ),
                       ),
                       SizedBox(height: 8.h),
-                      SizedBox(
-                        height: 188.h,
-                        width: double.infinity,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/images/map.png',
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: 100.h,
-                              left: 30.w,
-                              right: 30.w,
-                              child: Icon(
-                                Icons.location_pin,
-                                color: Colors.red,
-                                size: 40.sp,
-                              ),
-                            ),
-                          ],
-                        ),
+                      LocationMap(
+                        address: realEstate.location,
+                        markerTitle: realEstate.title,
                       ),
                       SizedBox(height: 10.h),
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
-                      Row(
+                    Row(
                         //crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Padding(
@@ -465,14 +486,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  "Agent",
-                                  style: TextStyle(
-                                    fontSize: 16.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: KTextColor,
-                                  ),
-                                ),
+                                
                                 SizedBox(height: 2.h),
                                 Text(
                                    
@@ -504,9 +518,39 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                             padding: EdgeInsets.only(top: 10.h),
                             child: Column(
                               children: [
-                                _buildActionIcon(FontAwesomeIcons.whatsapp),
+                                GestureDetector(
+                                  onTap: () {
+                                    final whatsappNumber = realEstate.whatsappNumber ?? realEstate.phoneNumber ?? '';
+                                    if (whatsappNumber.isNotEmpty && 
+                                        whatsappNumber != 'null' && 
+                                        whatsappNumber != 'nullnow') {
+                                      final url = PhoneNumberFormatter.getWhatsAppUrl(whatsappNumber);
+                                      _launchUrl(url);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('WhatsApp number not available')),
+                                      );
+                                    }
+                                  },
+                                  child: _buildActionIcon(FontAwesomeIcons.whatsapp),
+                                ),
                                 SizedBox(height: 5.h),
-                                _buildActionIcon(Icons.phone),
+                                GestureDetector(
+                                  onTap: () {
+                                    final phoneNumber = realEstate.phoneNumber ?? '';
+                                    if (phoneNumber.isNotEmpty && 
+                                        phoneNumber != 'null' && 
+                                        phoneNumber != 'nullnow') {
+                                      final url = PhoneNumberFormatter.getTelUrl(phoneNumber);
+                                      _launchUrl(url);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Phone number not available')),
+                                      );
+                                    }
+                                  },
+                                  child: _buildActionIcon(Icons.phone),
+                                ),
                               ],
                             ),
                           ),
@@ -561,10 +605,8 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
+          );
+    
   }
 
   Widget _buildDetailBox(String title, String value) {
@@ -594,7 +636,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
             style: TextStyle(
               fontWeight: FontWeight.w500,
               fontSize: 13.sp,
-              color: KTextColor,
+              color: MyColor.KTextColor,
             ),
           ),
         ),
@@ -614,5 +656,153 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
         child: Icon(icon, color: Colors.white, size: 20.sp),
       ),
     );
+  }
+
+  // Helper method to format date without time
+  String _formatDate(String dateTime) {
+    if (dateTime.isEmpty) return '';
+    try {
+      // Split by 'T' to separate date and time, then take only the date part
+      return dateTime.split('T').first;
+    } catch (e) {
+      // If parsing fails, return original string
+      return dateTime;
+    }
+  }
+
+  // Helper method to get ordered images with main image first
+  List<String?> _getOrderedImages(RealEstateAdModel realEstate) {
+    List<String?> orderedImages = [];
+    
+    // Add main image first if it exists
+    if (realEstate.mainImage != null && realEstate.mainImage!.isNotEmpty) {
+      orderedImages.add(realEstate.mainImage);
+    }
+    
+    // Add thumbnail images, excluding the main image if it's already in thumbnails
+    if (realEstate.thumbnailImages != null) {
+      for (String thumbnailImage in realEstate.thumbnailImages!) {
+        // Only add if it's not the same as main image
+        if (thumbnailImage != realEstate.mainImage) {
+          orderedImages.add(thumbnailImage);
+        }
+      }
+    }
+    
+    // If no images at all, return empty list
+    if (orderedImages.isEmpty) {
+      orderedImages.add(null); // This will show placeholder
+    }
+    
+    return orderedImages;
+  }
+
+  Future<void> _launchUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch $urlString')),
+        );
+      }
+    }
+  }
+
+  void _launchWhatsApp(String phoneNumber) async {
+    // Clean phone number - remove spaces, dashes, and other non-numeric characters except +
+    String cleanNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
+    
+    print('📱 WhatsApp Debug Info:');
+    print('   Original number: $phoneNumber');
+    print('   Cleaned number: $cleanNumber');
+    
+    // Check if number already has a country code
+    if (cleanNumber.startsWith('+')) {
+      // Number already has country code, use as is
+      print('   Number already has country code: $cleanNumber');
+    } else if (cleanNumber.startsWith('00')) {
+      // Replace 00 with +
+      cleanNumber = '+${cleanNumber.substring(2)}';
+      print('   Converted 00 to +: $cleanNumber');
+    } else if (cleanNumber.startsWith('971')) {
+      // Already has UAE code without +, just add +
+      cleanNumber = '+$cleanNumber';
+      print('   Added + to existing 971: $cleanNumber');
+    } else if (cleanNumber.length >= 9 && cleanNumber.length <= 10) {
+      // Local UAE number, add +971
+      cleanNumber = '+971$cleanNumber';
+      print('   Added UAE country code: $cleanNumber');
+    } else {
+      // Number might already have country code without +, add + if it looks like international format
+      if (cleanNumber.length > 10) {
+        cleanNumber = '+$cleanNumber';
+        print('   Added + to international number: $cleanNumber');
+      } else {
+        // Assume it's a local UAE number
+        cleanNumber = '+971$cleanNumber';
+        print('   Assumed local UAE number, added +971: $cleanNumber');
+      }
+    }
+    
+    final url = 'https://wa.me/${cleanNumber.substring(1)}'; // Remove + for WhatsApp URL
+    print('   Final WhatsApp URL: $url');
+    
+    try {
+      // Try using external_app_launcher for better WhatsApp integration
+      bool whatsappInstalled = await LaunchApp.isAppInstalled(
+        androidPackageName: 'com.whatsapp',
+        iosUrlScheme: 'whatsapp://',
+      );
+      
+      if (whatsappInstalled) {
+        await LaunchApp.openApp(
+          androidPackageName: 'com.whatsapp',
+          iosUrlScheme: 'whatsapp://send?phone=${cleanNumber.substring(1)}',
+          appStoreLink: 'https://apps.apple.com/app/whatsapp-messenger/id310633997',
+          openStore: false,
+        );
+        print('✅ WhatsApp launched successfully using external_app_launcher');
+      } else {
+        // Fallback to URL launcher
+        if (await canLaunch(url)) {
+          await launch(
+            url,
+            forceSafariVC: false,
+            forceWebView: false,
+            enableJavaScript: false,
+          );
+          print('✅ WhatsApp launched successfully using URL launcher');
+        } else {
+          print('❌ Could not launch WhatsApp: $url');
+          // Try alternative WhatsApp URL format
+          final alternativeUrl = 'whatsapp://send?phone=${cleanNumber.substring(1)}';
+          print('   Trying alternative URL: $alternativeUrl');
+          if (await canLaunch(alternativeUrl)) {
+            await launch(alternativeUrl);
+            print('✅ WhatsApp launched with alternative URL');
+          } else {
+            print('❌ Alternative URL also failed - WhatsApp may not be installed');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error launching WhatsApp: $e');
+    }
+  }
+
+  void _makePhoneCall(String phoneNumber) async {
+    // Clean phone number
+    String cleanNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
+    
+    final url = 'tel:$cleanNumber';
+    try {
+      if (await canLaunch(url)) {
+        await launch(url);
+      } else {
+        print('Could not make phone call: $url');
+      }
+    } catch (e) {
+      print('Error making phone call: $e');
+    }
   }
 }

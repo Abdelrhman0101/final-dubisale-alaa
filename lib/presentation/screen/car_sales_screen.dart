@@ -5,13 +5,16 @@ import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dar
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:advertising_app/presentation/widget/custom_category.dart';
+import '../widget/unified_dropdown.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // تعريف الثوابت
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -49,6 +52,21 @@ class _HomeScreenState extends State<HomeScreen> {
       provider.fetchMakes();
       provider.fetchTopDealerAds(forceRefresh: true);
     });
+  }
+
+  List<CarModel> _getModelsWithAllAndOther(CarAdProvider provider) {
+    List<CarModel> modelsWithOptions = [];
+    
+    // إضافة خيار "All"
+    modelsWithOptions.add(CarModel(id: -1, name: "All", makeId: -1));
+    
+    // إضافة النماذج الحقيقية
+    modelsWithOptions.addAll(provider.models);
+    
+    // إضافة خيار "Other"
+    modelsWithOptions.add(CarModel(id: -2, name: "Other", makeId: -2));
+    
+    return modelsWithOptions;
   }
 
   List<String> get categories => [
@@ -160,18 +178,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                   color: KTextColor))
                         ]),
                         SizedBox(height: 4.h),
-                        _buildSingleSelectField<MakeModel>(
-                            context,
-                            s.make,
-                            carAdProvider.selectedMake,
-                            carAdProvider.makes, (selection) {
-                          carAdProvider.updateSelectedMake(selection);
-                          setState(() {
-                            _showValidationError = false;
-                          });
-                        },
-                            displayNamer: (make) => make.name,
-                            isLoading: carAdProvider.isLoadingMakes),
+                        UnifiedDropdown<MakeModel>(
+                          title: s.choose_make,
+                          selectedValue: carAdProvider.selectedMake,
+                          items: carAdProvider.makes,
+                          onConfirm: (selection) {
+                            carAdProvider.updateSelectedMake(selection);
+                            setState(() {
+                              _showValidationError = false;
+                            });
+                          },
+                          displayNamer: (make) => make.name,
+                          isLoading: carAdProvider.isLoadingMakes,
+                        ),
                         if (_showValidationError)
                           Padding(
                               padding:
@@ -181,67 +200,59 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.red.shade700,
                                       fontSize: 12.sp))),
                         SizedBox(height: 3.h),
-                        if (carAdProvider.selectedMake != null &&
-                            carAdProvider.selectedMake!.id > 0)
-                          _buildSingleSelectField<CarModel>(
-                            context,
-                            s.model,
-                            carAdProvider.selectedModel,
-                            carAdProvider.models,
-                            (selection) {
-                              carAdProvider.updateSelectedModel(selection);
+                        UnifiedDropdown<CarModel>(
+                          title: s.choose_model,
+                          selectedValue: carAdProvider.selectedModel,
+                          items: _getModelsWithAllAndOther(carAdProvider),
+                          onConfirm: (selection) {
+                            carAdProvider.updateSelectedModel(selection);
+                            setState(() {
+                              _showValidationError = false;
+                            });
+                          },
+                          displayNamer: (model) => model.name,
+                          isLoading: carAdProvider.isLoadingModels,
+                        ),
+                        SizedBox(height: 4.h),
+                        UnifiedSearchButton(
+                          onPressed: () {
+                            String validation =
+                                carAdProvider.getSearchValidationMessage(s);
+                            if (validation.isEmpty) {
                               setState(() {
                                 _showValidationError = false;
                               });
-                            },
-                            displayNamer: (model) => model.name,
-                            isLoading: carAdProvider.isLoadingModels,
-                          ),
-                        SizedBox(height: 4.h),
-                        Padding(
-                          padding:
-                              EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                          child: GestureDetector(
-                            onTap: () {
-                              String validation =
-                                  carAdProvider.getSearchValidationMessage(s);
-                              if (validation.isEmpty) {
-                                setState(() {
-                                  _showValidationError = false;
-                                });
-                                Map<String, String> filters = {};
-                                final selectedMake = carAdProvider.selectedMake;
-                                if (selectedMake != null) {
-                                  if (selectedMake.id == -2)
-                                    filters['make'] = "Other";
-                                  else if (selectedMake.id > 0) {
-                                    filters['make'] = selectedMake.name;
-                                    if (carAdProvider.selectedModel != null)
-                                      filters['model'] =
-                                          carAdProvider.selectedModel!.name;
+                              Map<String, String> filters = {};
+                              final selectedMake = carAdProvider.selectedMake;
+                              final selectedModel = carAdProvider.selectedModel;
+                              
+                              if (selectedMake != null) {
+                                if (selectedMake.id == -2) {
+                                  // إذا اختار "Other" في الماركة
+                                  filters['make'] = "Other";
+                                } else if (selectedMake.id > 0) {
+                                  // إذا اختار ماركة حقيقية (ليس "All")
+                                  filters['make'] = selectedMake.name;
+                                  
+                                  // إضافة الموديل فقط إذا لم يكن "All" أو null
+                                  if (selectedModel != null && 
+                                      selectedModel.id != -1 && // ليس "All"
+                                      selectedModel.name != "All") {
+                                    filters['model'] = selectedModel.name;
                                   }
+                                  // إذا كان الموديل "All" أو null، لا نضيف فلتر الموديل
+                                  // وبالتالي سيظهر جميع موديلات الماركة المختارة
                                 }
-                                context.push('/cars-sales',
-                                    extra: filters.isEmpty ? null : filters);
-                              } else {
-                                setState(() {
-                                  _validationMessage = validation;
-                                  _showValidationError = true;
-                                });
                               }
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                  color: KPrimaryColor,
-                                  borderRadius: BorderRadius.circular(8)),
-                              height: 43,
-                              width: double.infinity,
-                              child: Center(
-                                  child: Text(s.search,
-                                      style: TextStyle(
-                                          color: Colors.white, fontSize: 16))),
-                            ),
-                          ),
+                              context.push('/cars-sales',
+                                  extra: filters.isEmpty ? null : filters);
+                            } else {
+                              setState(() {
+                                _validationMessage = validation;
+                                _showValidationError = true;
+                              });
+                            }
+                          },
                         ),
                         SizedBox(height: 5.h),
                         Padding(
@@ -377,12 +388,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             Stack(children: [
                               ClipRRect(
                                   borderRadius: BorderRadius.circular(4.r),
-                                  child: Image.network(
-                                    car.mainImage,
+                                  child: CachedNetworkImage(
+                                    imageUrl: ImageUrlHelper.getFullImageUrl(car.mainImage),
                                     height: (94).h,
                                     width: double.infinity,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (c, e, s) => Image.asset(
+                                    placeholder: (context, url) => Container(
+                                        color: Colors.grey[300],
+                                        child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                                    errorWidget: (context, url, error) => Image.asset(
                                         'assets/images/car.jpg',
                                         fit: BoxFit.cover),
                                   )),
@@ -439,195 +453,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       }).toList(),
-    );
-  }
-}
-
-Widget _buildSingleSelectField<T>(BuildContext context, String title,
-    T? selectedValue, List<T> allItems, Function(T?) onConfirm,
-    {required String Function(T) displayNamer, bool isLoading = false}) {
-  final s = S.of(context);
-  String displayText = isLoading
-      ? "loading"
-      : selectedValue == null
-          ? title
-          : displayNamer(selectedValue);
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: 8.w),
-    child: GestureDetector(
-      onTap: isLoading
-          ? null
-          : () async {
-              final result = await showModalBottomSheet<T>(
-                context: context,
-                backgroundColor: Colors.white,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(20))),
-                builder: (context) => _SingleSelectBottomSheet<T>(
-                    title: title,
-                    items: allItems,
-                    initialSelection: selectedValue,
-                    displayNamer: displayNamer),
-              );
-              onConfirm(result);
-            },
-      child: Container(
-        height: 48,
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: borderColor),
-            borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(displayText,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: selectedValue == null || isLoading
-                          ? Colors.grey.shade500
-                          : KTextColor,
-                      fontSize: 12.sp),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1),
-            ),
-            if (isLoading)
-              const SizedBox(
-                  width: 15,
-                  height: 15,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _SingleSelectBottomSheet<T> extends StatefulWidget {
-  final String title;
-  final List<T> items;
-  final T? initialSelection;
-  final String Function(T) displayNamer;
-  const _SingleSelectBottomSheet(
-      {Key? key,
-      required this.title,
-      required this.items,
-      this.initialSelection,
-      required this.displayNamer})
-      : super(key: key);
-  @override
-  _SingleSelectBottomSheetState<T> createState() =>
-      _SingleSelectBottomSheetState<T>();
-}
-
-class _SingleSelectBottomSheetState<T>
-    extends State<_SingleSelectBottomSheet<T>> {
-  T? _selectedItem;
-  final TextEditingController _searchController = TextEditingController();
-  List<T> _filteredItems = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedItem = widget.initialSelection;
-    _filteredItems = List.from(widget.items);
-    _searchController.addListener(_filterItems);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _filterItems() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      _filteredItems = widget.items
-          .where(
-              (item) => widget.displayNamer(item).toLowerCase().contains(query))
-          .toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Theme(
-      data: Theme.of(context).copyWith(unselectedWidgetColor: borderColor),
-      child: Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            top: 16,
-            left: 16,
-            right: 16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(widget.title,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18.sp,
-                      color: KTextColor)),
-              const SizedBox(height: 16),
-              TextFormField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                      hintText: s.search,
-                      prefixIcon: const Icon(Icons.search, color: KTextColor),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: borderColor)),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: borderColor)))),
-              const SizedBox(height: 8),
-              const Divider(),
-              Expanded(
-                child: _filteredItems.isEmpty
-                    ? Center(
-                        child: Text(s.noResultsFound,
-                            style: const TextStyle(color: KTextColor)))
-                    : ListView.builder(
-                        itemCount: _filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = _filteredItems[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(widget.displayNamer(item),
-                                style: const TextStyle(color: KTextColor)),
-                            leading: Radio<T>(
-                              value: item,
-                              groupValue: _selectedItem,
-                              activeColor: KPrimaryColor,
-                              onChanged: (T? value) {
-                                Navigator.pop(context,
-                                    _selectedItem == value ? null : value);
-                              },
-                            ),
-                            onTap: () {
-                              if (_selectedItem == item) {
-                                Navigator.pop(context, null);
-                              } else {
-                                Navigator.pop(context, item);
-                              }
-                            },
-                          );
-                        },
-                      ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

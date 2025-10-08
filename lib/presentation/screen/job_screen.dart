@@ -1,13 +1,19 @@
 import 'dart:math';
-import 'package:advertising_app/data/job_data_dummy.dart';
+import 'package:advertising_app/presentation/providers/job_ad_provider.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
+import 'package:advertising_app/presentation/providers/job_info_provider.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:advertising_app/presentation/widget/custom_category.dart';
+import 'package:advertising_app/presentation/widget/unified_dropdown.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -25,9 +31,23 @@ class JobScreen extends StatefulWidget {
 class _JobScreenState extends State<JobScreen> {
   int _selectedIndex = 3;
 
-  // +++ تم تحويل المتغيرات لدعم الاختيار المتعدد +++
-  List<String> _selectedEmirates = [];
-  List<String> _selectedCategoryTypes = [];
+  // +++ تحويل المتغيرات لدعم الاختيار الفردي +++
+  String? _selectedEmirate;
+  String? _selectedCategoryType;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fetch job ads when the screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<JobAdProvider>();
+      provider.fetchAds();
+      provider.fetchBestAdvertisers();
+      provider.fetchAllJobScreenData();
+      // جلب صور الفئات من مزود معلومات الوظائف
+      context.read<JobInfoProvider>().fetchJobAdValues();
+    });
+  }
 
   List<String> get categories => [
         S.of(context).carsales,
@@ -164,41 +184,54 @@ class _JobScreenState extends State<JobScreen> {
                       ),
                       SizedBox(height: 4.h),
 
-                      _buildMultiSelectField(context, s.emirate, _selectedEmirates, 
-                        ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"], 
-                        (selection) => setState(() => _selectedEmirates = selection)),
+                      Consumer<JobAdProvider>(
+                        builder: (context, provider, _) {
+                          final emirateItems = ['All', ...provider.emirateNames];
+                          return UnifiedDropdown(
+                            title: s.emirate,
+                            selectedValue: _selectedEmirate,
+                            items: emirateItems,
+                            onConfirm: (selection) => setState(() => _selectedEmirate = selection),
+                            isLoading: provider.isEmiratesLoading,
+                          );
+                        },
+                      ),
                       
                       SizedBox(height: 3.h),
                      
-                      _buildMultiSelectField(context, s.category_type, _selectedCategoryTypes, 
-                        ["IT & Software", "Sales & Marketing", "Accounting", "Engineering", "Healthcare"],
-                         (selection) => setState(() => _selectedCategoryTypes = selection)),
+                      Consumer<JobAdProvider>(
+                        builder: (context, provider, _) {
+                          final categoryTypeItems = ['All', ...provider.categoryTypes];
+                          return UnifiedDropdown(
+                            title: s.category_type,
+                            selectedValue: _selectedCategoryType,
+                            items: categoryTypeItems,
+                            onConfirm: (selection) => setState(() => _selectedCategoryType = selection),
+                            isLoading: provider.isCategoryTypesLoading,
+                          );
+                        },
+                      ),
                       
                       SizedBox(height: 4.h),
                       
-                      Padding(
-                        padding:
-                            EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                        child: GestureDetector(
-                          onTap: () => context.push('/job_search'),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: KPrimaryColor,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            height: 43,
-                            width: double.infinity,
-                            child: Center(
-                              child: Text(
-                                s.search,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                      UnifiedSearchButton(
+                        onPressed: () {
+                          // Validation: يتطلب اختيار الإمارة ونوع الفئة (يسمح بـ All)
+                          if (_selectedEmirate == null || _selectedCategoryType == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("please select required fields")),
+                            );
+                            return;
+                          }
+
+                          // حفظ الفلاتر في الـ Provider قبل الانتقال
+                          final provider = context.read<JobAdProvider>();
+                          provider.updateSelectedEmirate(_selectedEmirate);
+                          provider.updateSelectedCategoryType(_selectedCategoryType);
+
+                          context.push('/job_search');
+                        },
+                        text: s.search,
                       ),
                       SizedBox(height: 7.h),
                       Padding(
@@ -253,161 +286,163 @@ class _JobScreenState extends State<JobScreen> {
                         ],
                       ),
                       SizedBox(height: 1.h),
-                      Column(
-                        children: List.generate(3, (sectionIndex) {
-                          return Column(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 8.w,
-                                  vertical: 8.h,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      "Al Madayen Company",
-                                      style: TextStyle(
-                                        fontSize: 15.sp,
-                                        fontWeight: FontWeight.w600,
-                                        color: KTextColor,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    InkWell(
-                                      onTap: () {
-                                        context.push('/all_add_job');
-                                      },
-                                      child: Text(
-                                        s.see_all_ads,
-                                        style: TextStyle(
-                                          fontSize: 14.sp,
-                                          decoration: TextDecoration.underline,
-                                          decorationColor: borderColor,
-                                          color: borderColor,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                      Consumer<JobAdProvider>(
+                        builder: (context, provider, _) {
+                          if (provider.isBestAdvertisersLoading) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+
+                          if (provider.bestAdvertisersError != null) {
+                            return Center(
+                              child: Text(
+                                'Error: ${provider.bestAdvertisersError}',
+                                style: TextStyle(color: Colors.red, fontSize: 14.sp),
                               ),
-                              SizedBox(
-                                height: 175,
-                                width: double.infinity,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: min(JobDataDummy.length, 20),
-                                  padding:
-                                      EdgeInsets.symmetric(horizontal: 5.w),
-                                  itemBuilder: (context, index) {
-                                    final ad = JobDataDummy[index];
-                                    return Padding(
-                                      padding: EdgeInsetsDirectional.only(
-                                        end: index == JobDataDummy.length - 1 ? 0 : 4.w,
-                                      ),
-                                      child: Container(
-                                        width: 145,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(4.r),
-                                          border: Border.all(
-                                              color: Colors.grey.shade300),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color:
-                                                  Colors.grey.withOpacity(0.15),
-                                              blurRadius: 5.r,
-                                              offset: Offset(0, 2.h),
-                                            ),
-                                          ],
+                            );
+                          }
+
+                          if (provider.bestAdvertisers.isEmpty) {
+                            return Center(
+                              child: Text(
+                                s.noResultsFound,
+                                style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                              ),
+                            );
+                          }
+
+                          // بناء الأقسام من البيانات الفعلية
+                          return Column(
+                            children: provider.bestAdvertisers.map((advertiser) {
+                              // فلترة إعلانات الوظائف فقط
+                              final jobAds = advertiser.ads.where((ad) {
+                                final category = ad.category?.toLowerCase() ?? '';
+                                return category.contains('job');
+                              }).toList();
+
+                              if (jobAds.isEmpty) return const SizedBox.shrink();
+
+                              return Column(
+                                children: [
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            advertiser.name,
+                                            style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: KTextColor),
+                                          ),
                                         ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Stack(
+                                        InkWell(
+                                          onTap: () => context.push('/all_add_job'),
+                                          child: Text(
+                                            s.see_all_ads,
+                                            style: TextStyle(
+                                              fontSize: 14.sp,
+                                              decoration: TextDecoration.underline,
+                                              decorationColor: borderColor,
+                                              color: borderColor,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    height: 175,
+                                    width: double.infinity,
+                                    child: ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: min(jobAds.length, 20),
+                                      padding: EdgeInsets.symmetric(horizontal: 5.w),
+                                      itemBuilder: (context, index) {
+                                        final ad = jobAds[index];
+                                        // استخدام صور الفئات من JobAdProvider بدلًا من صورة وهمية
+                                        final jobsProvider = Provider.of<JobAdProvider>(context, listen: false);
+                                        final imagePath = jobsProvider.categoryImages['job_offer']
+                                          ?? jobsProvider.categoryImages['job_seeker']
+                                          ?? '';
+                                        final imageUrl = ImageUrlHelper.getFullImageUrl(imagePath);
+                                        // نص السعر/الراتب ليُستخدم لاحقًا في عناصر الواجهة
+                                        final priceText = (ad.priceRange ?? ad.salary ?? '').trim();
+
+                                        return Padding(
+                                          padding: EdgeInsetsDirectional.only(end: index == jobAds.length - 1 ? 0 : 4.w),
+                                          child: Container(
+                                            width: 145,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(4.r),
+                                              border: Border.all(color: Colors.grey.shade300),
+                                              boxShadow: [
+                                                BoxShadow(color: Colors.grey.withOpacity(0.15), blurRadius: 5.r, offset: Offset(0, 2.h)),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                          4.r),
-                                                  child: Image.asset(
-                                                    ad.image,
-                                                    height: 94.h,
-                                                    width: double.infinity,
-                                                    fit: BoxFit.cover,
-                                                  ),
+                                                Stack(
+                                                  children: [
+                                                    ClipRRect(
+                                                      borderRadius: BorderRadius.circular(4.r),
+                                                      child: imageUrl.isNotEmpty
+                                                          ? CachedNetworkImage(
+                                                              imageUrl: imageUrl,
+                                                              height: 94.h,
+                                                              width: double.infinity,
+                                                              fit: BoxFit.cover,
+                                                              placeholder: (context, url) => const Center(
+                                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                                              ),
+                                                              errorWidget: (context, url, error) => const SizedBox.shrink(),
+                                                            )
+                                                          : const Center(
+                                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                                            ),
+                                                    ),
+                                                    Positioned(top: 8, right: 8, child: Icon(Icons.favorite_border, color: Colors.grey.shade300)),
+                                                  ],
                                                 ),
-                                                Positioned(
-                                                  top: 8,
-                                                  right: 8,
-                                                  child: Icon(
-                                                      Icons.favorite_border,
-                                                      color:
-                                                          Colors.grey.shade300),
+                                                Expanded(
+                                                  child: Padding(
+                                                    padding: EdgeInsets.symmetric(horizontal: 6.w),
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                                      children: [
+                                                        // عرض الراتب/نطاق السعر بشكل آمن
+                                                        if (priceText.isNotEmpty)
+                                                          Text(
+                                                            "${NumberFormatter.formatPrice(priceText)}",
+                                                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 11.5.sp),
+                                                          ),
+                                                        Text(
+                                                          ad.job_name ?? 'No title',
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5.sp, color: KTextColor),
+                                                        ),
+                                                        Text(
+                                                          '${ad.emirate ?? ''} ${ad.district ?? ''}'.trim(),
+                                                          style: TextStyle(fontSize: 11.5.sp, color: const Color.fromRGBO(165, 164, 162, 1), fontWeight: FontWeight.w600),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
                                                 ),
                                               ],
                                             ),
-                                            Expanded(
-                                              child: Padding(
-                                                padding: EdgeInsets.symmetric(
-                                                    horizontal: 6.w),
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceEvenly,
-                                                  children: [
-                                                    Text(
-                                                      ad.price,
-                                                      style: TextStyle(
-                                                        color: Colors.red,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 11.5.sp,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      ad.title,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 11.5.sp,
-                                                        color: KTextColor,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      ad.location,
-                                                      style: TextStyle(
-                                                        fontSize: 11.5.sp,
-                                                        color: const Color
-                                                            .fromRGBO(
-                                                            165, 164, 162, 1),
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
                           );
-                        }),
+                        },
                       ),
                       SizedBox(height: 16.h),
                     ],
@@ -422,154 +457,3 @@ class _JobScreenState extends State<JobScreen> {
   }
 }
 
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// ++++         ودجت بناء الحقول المعاد استخدامها             ++++
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Widget _buildMultiSelectField(BuildContext context, String title, List<String> selectedValues, List<String> allItems, Function(List<String>) onConfirm) {
-    final s = S.of(context);
-    String displayText = selectedValues.isEmpty ? title : selectedValues.join(', ');
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8.w),
-      child: GestureDetector(
-        onTap: () async {
-          final result = await showModalBottomSheet<List<String>>(
-            context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            builder: (context) => _MultiSelectBottomSheet(title: title, items: allItems, initialSelection: selectedValues),
-          );
-          if (result != null) { onConfirm(result); }
-        },
-        child: Container(
-          height: 48, width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.centerLeft,
-          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)),
-          child: Text(
-            displayText,
-            style: TextStyle(
-              fontWeight: selectedValues.isEmpty ? FontWeight.normal : FontWeight.w500,
-              color: selectedValues.isEmpty ? Colors.grey.shade500 : KTextColor,
-              fontSize: 12
-            ),
-            overflow: TextOverflow.ellipsis, maxLines: 1,
-          ),
-        ),
-      ),
-    );
-}
-
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// ++++                اللوحات السفلية (Bottom Sheets)         ++++
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-class _MultiSelectBottomSheet extends StatefulWidget {
-  final String title; final List<String> items; final List<String> initialSelection;
-  const _MultiSelectBottomSheet({Key? key, required this.title, required this.items, required this.initialSelection}) : super(key: key);
-  @override
-  _MultiSelectBottomSheetState createState() => _MultiSelectBottomSheetState();
-}
-
-class _MultiSelectBottomSheetState extends State<_MultiSelectBottomSheet> {
-  late final List<String> _selectedItems;
-  final TextEditingController _searchController = TextEditingController();
-  List<String> _filteredItems = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedItems = List.from(widget.initialSelection);
-    _filteredItems = List.from(widget.items);
-    _searchController.addListener(_filterItems);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _filterItems() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      _filteredItems = widget.items.where((item) => item.toLowerCase().contains(query)).toList();
-    });
-  }
-
-  void _onItemTapped(String item) {
-    setState(() {
-      if (_selectedItems.contains(item)) { _selectedItems.remove(item); } 
-      else { _selectedItems.add(item); }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    
-    return Theme(
-      data: Theme.of(context).copyWith(
-        checkboxTheme: CheckboxThemeData(
-          side: MaterialStateBorderSide.resolveWith(
-            (_) => BorderSide(width: 1.0, color: borderColor),
-          ),
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(widget.title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp, color: KTextColor)),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _searchController,
-                  style: TextStyle(color: KTextColor), 
-                  decoration: InputDecoration(
-                    hintText: s.search, prefixIcon: Icon(Icons.search, color: KTextColor),
-                    hintStyle: TextStyle(color: KTextColor.withOpacity(0.5)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-                  ),
-                ),
-                const SizedBox(height: 8), const Divider(),
-                Expanded(
-                  child: _filteredItems.isEmpty 
-                    ? Center(child: Text(s.noResultsFound, style: TextStyle(color: KTextColor)))
-                    : ListView.builder(
-                        itemCount: _filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = _filteredItems[index];
-                          return CheckboxListTile(
-                            title: Text(item, style: TextStyle(color: KTextColor)),
-                            value: _selectedItems.contains(item),
-                            activeColor: KPrimaryColor,
-                            checkColor: Colors.white,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            onChanged: (_) => _onItemTapped(item),
-                          );
-                        },
-                      ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, _selectedItems),
-                    child: Text(s.apply),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: KPrimaryColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

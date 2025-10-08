@@ -1,5 +1,6 @@
 import 'package:advertising_app/generated/l10n.dart';
-import 'package:advertising_app/data/model/car_rent_model.dart';
+import 'package:advertising_app/data/model/car_rent_ad_model.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:advertising_app/constant/string.dart';
 import 'package:flutter/services.dart';
@@ -7,10 +8,16 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:readmore/readmore.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:advertising_app/utils/phone_number_formatter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:advertising_app/presentation/widget/location_map.dart';
 
 class CarRentDetailsScreen extends StatefulWidget {
-  final CarRentModel car_rent;
+  final CarRentAdModel car_rent;
   const CarRentDetailsScreen({super.key, required this.car_rent});
 
   @override
@@ -58,18 +65,48 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                 Stack(
                   children: [
                     SizedBox(
-                      height: 238.h,
+                      height: 290.h,
                       width: double.infinity,
                       child: PageView.builder(
                         controller: _pageController,
-                        itemCount: car_rent.images.length,
+                        itemCount: (car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty ? 1 : 0) + car_rent.thumbnailImages.length,
                         onPageChanged: (index) =>
                             setState(() => _currentPage = index),
-                        itemBuilder: (context, index) => Image.asset(
-                          car_rent.images[index],
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
+                        itemBuilder: (context, index) {
+                          String imageUrl = '';
+                          
+                          // إعطاء الأولوية للصورة الرئيسية أولاً
+                          if (index == 0 && car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty) {
+                            imageUrl = ImageUrlHelper.getMainImageUrl(car_rent.mainImage!);
+                          } else {
+                            // حساب الفهرس الصحيح للصور المصغرة
+                            int thumbnailIndex = car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty ? index - 1 : index;
+                            if (thumbnailIndex >= 0 && thumbnailIndex < car_rent.thumbnailImages.length) {
+                              imageUrl = ImageUrlHelper.getThumbnailImageUrls(car_rent.thumbnailImages)[thumbnailIndex];
+                            }
+                          }
+                          
+                          if (imageUrl.isEmpty) {
+                            return Container(
+                              color: Colors.grey[300],
+                              child: Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+                            );
+                          }
+                          
+                          return CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: (context, url) => Container(
+                              color: Colors.grey[300],
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.grey[300],
+                              child: Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+                            ),
+                          );
+                        },
                       ),
                     ),
                     // Back button
@@ -131,9 +168,9 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                     Positioned(
                       bottom: 12.h,
                       left: MediaQuery.of(context).size.width / 2 -
-                          (car_rent.images.length * 10.w / 2),
+                          (((car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty ? 1 : 0) + car_rent.thumbnailImages.length) * 10.w / 2),
                       child: Row(
-                        children: List.generate(car_rent.images.length, (index) {
+                        children: List.generate((car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty ? 1 : 0) + car_rent.thumbnailImages.length, (index) {
                           return Container(
                             margin: EdgeInsets.symmetric(horizontal: 2.w),
                             width: 7.w,
@@ -161,7 +198,7 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                         child: Text(
-                          '${_currentPage + 1}/${car_rent.images.length}',
+                          '${_currentPage + 1}/${(car_rent.mainImage != null && car_rent.mainImage!.isNotEmpty ? 1 : 0) + car_rent.thumbnailImages.length}',
                           style:
                               TextStyle(color: Colors.white, fontSize: 12.sp),
                         ),
@@ -189,7 +226,7 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                                 ),
                                 SizedBox(width: 6.w),
                                 Text(
-                                  widget.car_rent.price,
+                                  '${NumberFormatter.formatPrice(widget.car_rent.price)}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16.sp,
@@ -198,15 +235,18 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                                 ),
                                 Spacer(),
                                 Text(
-                                  widget.car_rent.date,
+                                  widget.car_rent.createdAt?.split('T').first ?? 'null',
                                   style: TextStyle(
-                                      color: Colors.grey, fontSize: 10.sp),
+                                    color: Colors.grey,
+                                    fontSize: 12.sp,
+                                    fontWeight: FontWeight.w400,
+                                  ),
                                 ),
                               ],
                             ),
                             SizedBox(height: 6.h),
                             Text(
-                              widget.car_rent.title,
+                              "${widget.car_rent.make} ${widget.car_rent.model} ${widget.car_rent.trim} ${widget.car_rent.year}",
                               style: TextStyle(
                                 fontSize: 16.sp,
                                 fontWeight: FontWeight.w600,
@@ -218,15 +258,15 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
            Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildLabelWithValue("Day Rent", widget.car_rent.day_rent),
+                    _buildLabelWithValue("Day Rent", widget.car_rent.dayRent),
                     const SizedBox(width: 16),
-                    _buildLabelWithValue("Month Rent", widget.car_rent.month_rent),
+                    _buildLabelWithValue("Month Rent", widget.car_rent.monthRent),
                   ],
                 ),
              
                        SizedBox(height: 6.h),
                             Text(
-                              widget.car_rent.details,
+                              widget.car_rent.title,
                               style: TextStyle(
                                 fontSize: 14.sp,
                                 fontWeight: FontWeight.w500,
@@ -234,31 +274,33 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                               ),
                             ),
                             
-                            SizedBox(height: 6.h),
-                            Row(
-                              children: [
-                                SvgPicture.asset(
-                                  'assets/icons/locationicon.svg',
-                                  width: 20.w,
-                                  height: 18.h,
-                                ),
-                                SizedBox(width: 6.w),
-                                Expanded(
-                                  child: Text(
-                                    widget.car_rent.location,
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      color: KTextColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 5.h),
+                            // SizedBox(height: 6.h),
+                            // Row(
+                            //   children: [
+                            //     SvgPicture.asset(
+                            //       'assets/icons/locationicon.svg',
+                            //       width: 20.w,
+                            //       height: 18.h,
+                            //     ),
+                            //     SizedBox(width: 6.w),
+                            //     Expanded(
+                            //       child: Text(
+                            //         "${widget.car_rent.emirate}/${widget.car_rent.area}",
+                            //         style: TextStyle(
+                            //           fontSize: 14.sp,
+                            //           color: KTextColor,
+                            //           fontWeight: FontWeight.w500,
+                            //         ),
+                            //       ),
+                            //     ),
+                            //   ],
+                            // ),
+                            //SizedBox(height: 1.h),
                           ],
                         ),
                       ),
+
+                   
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Text(
                         S.of(context).car_details,
@@ -282,75 +324,58 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                         ),
                         children: [
                           _buildDetailBox(
-                              S.of(context).car_type, widget.car_rent.carType),
+                              S.of(context).car_type, widget.car_rent.carType ?? 'null'),
                           _buildDetailBox(
-                              S.of(context).trans_type, widget.car_rent.transType),
+                              S.of(context).trans_type, widget.car_rent.transType ?? "null"),
                           _buildDetailBox(
-                              S.of(context).color, widget.car_rent.color),
+                              S.of(context).color, widget.car_rent.color ?? "null"),
                           _buildDetailBox(S.of(context).interior_color,
-                              widget.car_rent.interiorColor),
+                            widget.car_rent.interior_color ??  "null"),
                           _buildDetailBox(
-                              S.of(context).fuel_type, widget.car_rent.fuelType),
+                              S.of(context).fuel_type, widget.car_rent.fuelType ?? "null"),
                            _buildDetailBox(S.of(context).seats_no,
-                              widget.car_rent.seats.toString()),
+                              widget.car_rent.seats_no ?? "null"),
                           ],
                       ),
                       // SizedBox(height: 1.h),
-                      Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
-                      Text(
-                        S.of(context).description,
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
-                          color: KTextColor,
+                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
+                Text(S.of(context).description, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: KTextColor)),
+                SizedBox(height: 20.h),
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ReadMoreText(
+                          widget.car_rent.description ?? "null",
+                          trimLines: 5,
+                          colorClickableText: Color.fromARGB(255, 9, 37, 108),
+                          trimMode: TrimMode.Line,
+                          trimCollapsedText: 'Read more',
+                          lessStyle: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Color.fromARGB(255, 9, 37, 108),
+                          ),
+                          trimExpandedText: '  Show less',
+                          style: TextStyle(
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w500,
+                            color: KTextColor,
+                          ),
+                          moreStyle: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Color.fromARGB(255, 9, 37, 108),
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 20.h),
-                      Directionality(
-                        textDirection: TextDirection.ltr,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ReadMoreText(
-                                "New luxury and comfortable cars with latest brands",
-                                trimLines: 2,
-                                colorClickableText:
-                                    Color.fromARGB(255, 9, 37, 108),
-                                trimMode: TrimMode.Line,
-                                trimCollapsedText: 'Read more',
-                                lessStyle: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color.fromARGB(255, 9, 37, 108),
-                                ),
-                                trimExpandedText: '  Show less',
-                                style: TextStyle(
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w500,
-                                  color: KTextColor,
-                                ),
-                                moreStyle: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color.fromARGB(255, 9, 37, 108),
-                                ),
-                              ),
-                            )
-                            // Text(
-                            //   "20 % Down Payment With Insurance\n Registration And Delivery To \n Client Without Fees",
-                            //   textAlign: TextAlign.start,
-                            //   style:
-                            // TextStyle(
-                            //     fontSize: 14.sp,
-                            //     fontWeight: FontWeight.w500,
-                            //     color: KTextColor,
-                            //   ),
-                            // ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 50.h),
-                      Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
+                      )
+                    ],
+                  ),
+                ),
+                SizedBox(height: 1.h),
+                  Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
+                
                       Text(
                         S.of(context).location,
                         style: TextStyle(
@@ -372,7 +397,7 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                             SizedBox(width: 8.w),
                             Expanded(
                               child: Text(
-                                widget.car_rent.location,
+                                widget.car_rent.location??'null' ,
                                 style: TextStyle(
                                   fontSize: 14.sp,
                                   color: KTextColor,
@@ -384,31 +409,12 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                         ),
                       ),
                       SizedBox(height: 8.h),
-                      SizedBox(
-                        height: 188.h,
-                        width: double.infinity,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/images/map.png',
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: 100.h,
-                              left: 30.w,
-                              right: 30.w,
-                              child: Icon(
-                                Icons.location_pin,
-                                color: Colors.red,
-                                size: 40.sp,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 10.h),
+                LocationMap(
+                  address: widget.car_rent.location ?? '${widget.car_rent.emirate} ${widget.car_rent.area ?? ''}',
+                  markerTitle: widget.car_rent.title,
+                  height: 188.h,
+                ),
+                SizedBox(height: 10.h),
                       Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                       Row(
                         //crossAxisAlignment: CrossAxisAlignment.center,
@@ -429,17 +435,17 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  "Agent",
-                                  style: TextStyle(
-                                    fontSize: 16.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: KTextColor,
-                                  ),
-                                ),
+                                // Text(
+                                //   "Agent",
+                                //   style: TextStyle(
+                                //     fontSize: 16.sp,
+                                //     fontWeight: FontWeight.w600,
+                                //     color: KTextColor,
+                                //   ),
+                                // ),
                                 SizedBox(height: 2.h),
                                 Text(
-                                  car_rent.contact,
+                                  car_rent.advertiserName,
                                   style: TextStyle(
                                     fontSize: 14.sp,
                                     color: KTextColor,
@@ -530,7 +536,12 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
     );
   }
 
-  Widget _buildDetailBox(String title, String value) {
+  Widget _buildDetailBox(String title, String? value) {
+    // Handle null values by showing the field name with "null"
+    final displayValue = (value == null || value.isEmpty || value.toLowerCase() == 'null') 
+        ? "$title: null" 
+        : value;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -553,11 +564,13 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
             borderRadius: BorderRadius.circular(8.r),
           ),
           child: Text(
-            value,
+            displayValue,
             style: TextStyle(
               fontWeight: FontWeight.w500,
               fontSize: 13.sp,
-              color: KTextColor,
+              color: (value == null || value.isEmpty || value.toLowerCase() == 'null') 
+                  ? Colors.grey 
+                  : KTextColor,
             ),
           ),
         ),
@@ -566,21 +579,64 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
   }
 
   Widget _buildActionIcon(IconData icon) {
-    return Container(
-      height: 40.h,
-      width: 63.w,
-      decoration: BoxDecoration(
-        color: Color(0xFF01547E),
-        borderRadius: BorderRadius.circular(8.r),
-      ),
-      child: Center(
-        child: Icon(icon, color: Colors.white, size: 20.sp),
+    return GestureDetector(
+      onTap: () {
+        if (icon == FontAwesomeIcons.whatsapp) {
+          // وظيفة الواتساب
+          final phoneNumber = widget.car_rent.whatsapp;
+          if (phoneNumber != null && phoneNumber.isNotEmpty) {
+            final whatsappUrl = PhoneNumberFormatter.getWhatsAppUrl(phoneNumber);
+            _launchUrl(whatsappUrl);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("WhatsApp number not available")),
+            );
+          }
+        } else if (icon == Icons.phone) {
+          // وظيفة الاتصال
+          final phoneNumber = widget.car_rent.phoneNumber;
+          if (phoneNumber != null && phoneNumber.isNotEmpty) {
+            final telUrl = PhoneNumberFormatter.getTelUrl(phoneNumber);
+            _launchUrl(telUrl);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Phone number not available")),
+            );
+          }
+        }
+      },
+      child: Container(
+        height: 40.h,
+        width: 63.w,
+        decoration: BoxDecoration(
+          color: Color(0xFF01547E),
+          borderRadius: BorderRadius.circular(8.r),
+        ),
+        child: Center(
+          child: Icon(icon, color: Colors.white, size: 20.sp),
+        ),
       ),
     );
   }
-}
 
- Widget _buildLabelWithValue(String label, String value) {
+  // دالة فتح الروابط
+  Future<void> _launchUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch $urlString')),
+        );
+      }
+    }
+  }
+
+  Widget _buildLabelWithValue(String label, String? value) {
+    // Handle null values by showing the field name with "null"
+    final displayValue = (value == null || value.isEmpty || value.toLowerCase() == 'null') 
+        ? "$label: null" 
+        : value!.split('.')[0];
+    
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -599,10 +655,12 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
-            value,
+            displayValue,
             style: TextStyle(
               fontWeight: FontWeight.w500,
-              color: const Color.fromRGBO(0, 30, 90, 1),
+              color: (value == null || value.isEmpty || value.toLowerCase() == 'null') 
+                  ? Colors.grey 
+                  : const Color.fromRGBO(0, 30, 90, 1),
               fontSize: 14,
             ),
           ),
@@ -610,3 +668,4 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
       ],
     );
   }
+}

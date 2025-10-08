@@ -60,7 +60,7 @@ class _SplashGridScreenState extends State<SplashGridScreen> {
     if (hasValidSession) {
       context.go('/home');
     } else {
-      context.go('/signup');
+      context.go('/login');
     }
   }
 

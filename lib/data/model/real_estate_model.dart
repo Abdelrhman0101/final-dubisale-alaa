@@ -15,9 +15,15 @@ class RealEstateModel implements FavoriteItemInterface {
   final bool isPremium;
   final List<String> _images;
   final AdPriority priority;
+  final String? emirate;
+  final String? district;
+  final String? area;
+  
+  final String? propertyType;
+  final String? contractType;
 
 
-  RealEstateModel({
+  RealEstateModel(this.emirate, this.district, this.area, this.propertyType, this.contractType, {
     required this.title,
     required this.contact,
     required this.price,

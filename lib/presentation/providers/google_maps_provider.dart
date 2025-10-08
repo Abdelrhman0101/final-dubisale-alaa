@@ -80,11 +80,11 @@ class GoogleMapsProvider extends ChangeNotifier {
     _clearError();
     
     try {
-      print('GoogleMapsProvider: Starting location request...');
+      // print('GoogleMapsProvider: Starting location request...');
       _currentLocationData = await _locationService.getCurrentLocationData();
       
       if (_currentLocationData != null) {
-        print('GoogleMapsProvider: Location data received successfully');
+        // print('GoogleMapsProvider: Location data received successfully');
         
         // Get address for current location
         _currentAddress = await _mapsService.getAddressFromCoordinates(
@@ -92,7 +92,7 @@ class GoogleMapsProvider extends ChangeNotifier {
           _currentLocationData!.longitude!,
         );
         
-        print('GoogleMapsProvider: Address resolved: $_currentAddress');
+        // print('GoogleMapsProvider: Address resolved: $_currentAddress');
         
         // Move camera to current location
         await _mapsService.moveCameraToLocation(
@@ -108,12 +108,12 @@ class GoogleMapsProvider extends ChangeNotifier {
           snippet: _currentAddress,
         );
         
-        print('GoogleMapsProvider: Location process completed successfully');
+        // print('GoogleMapsProvider: Location process completed successfully');
       } else {
         throw Exception('فشل في الحصول على بيانات الموقع - لم يتم إرجاع أي بيانات');
       }
     } catch (e) {
-      print('GoogleMapsProvider: Error occurred: $e');
+      // print('GoogleMapsProvider: Error occurred: $e');
       String errorMessage = e.toString();
       
       // Handle specific error messages with more helpful instructions

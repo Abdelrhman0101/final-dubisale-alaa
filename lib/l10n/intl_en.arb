@@ -63,7 +63,7 @@
   "enteremail":"Enter Your Email",
 
   "verifnum":"Verify Your Number",
-  "phoneverify":"We've sent an SMS with an activation code to your phone",
+  "phoneverify":"We've sent an whatsApp with an activation code to your phone",
   "emilverify":"We've sent an Email with an activation code to your Email yourname@example.Com ",
   
   "verify":"Verify",
@@ -268,6 +268,7 @@
     "add10Images": "Add 10 Images",
 
     "restaurantsAds": "Restaurants Ads",
+    "no_restaurants_found": "No restaurants found",
     "otherServicesAds": "Other Services Ads",
 
     "jobsAds": "Jobs Ads",

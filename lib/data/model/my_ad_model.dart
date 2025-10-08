@@ -7,10 +7,19 @@ class MyAdModel {
   final String status;
   final String category;
   final String createdAt;
-  // إضافة حقول Make, Model, Trim
+  // إضافة حقول Make, Model, Trim للسيارات
   final String? make;
   final String? model;
   final String? trim;
+  final String? year;
+  // إضافة حقول المطاعم وخدمات السيارات
+  final String? description;
+  final String? emirate;
+  final String? district;
+  final String? area;
+  final String? priceRange;
+  final String? serviceType;
+  final String? serviceName;
   final String categorySlug;
   MyAdModel({
     required this.id,
@@ -25,6 +34,14 @@ class MyAdModel {
     this.make,
     this.model,
     this.trim,
+    this.year,
+    this.description,
+    this.emirate,
+    this.district,
+    this.area,
+    this.priceRange,
+    this.serviceType,
+    this.serviceName,
   });
 
   factory MyAdModel.fromJson(Map<String, dynamic> json) {
@@ -39,6 +56,15 @@ class MyAdModel {
       createdAt: json['created_at'],
       make: json['make']?.toString(),
       model: json['model']?.toString(),
+      trim: json['trim']?.toString(),
+      year: json['year']?.toString(),
+      description: json['description']?.toString(),
+      emirate: json['emirate']?.toString(),
+      district: json['district']?.toString(),
+      area: json['area']?.toString(),
+      priceRange: json['price_range']?.toString(),
+      serviceType: json['service_type']?.toString(),
+      serviceName: json['service_name']?.toString(),
       categorySlug: json['category_slug']?.toString() ?? '',
     );
   }

@@ -14,6 +14,9 @@ import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/constant/string.dart';
 import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:advertising_app/presentation/widget/location_map.dart';
 
 class CarDetailsScreen extends StatefulWidget {
   // نستقبل الآن الـ ID فقط
@@ -41,10 +44,9 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
     return number; // إرجاع النص كما هو إذا لم يكن عدداً صحيحاً أو عشرياً
   }
 
-  // تقسيم الرقم لجزء صحيح وجزء عشري (لو موجود)
+  // تقسيم الرقم لجزء صحيح فقط (إزالة الجزء العشري)
   List<String> parts = cleanNumber.split('.');
   String integerPart = parts[0];
-  String? decimalPart = parts.length > 1 ? parts[1] : null;
 
   // تحويل الجزء الصحيح لقائمة أحرف وعكسها
   bool isNegative = integerPart.startsWith('-');
@@ -65,10 +67,8 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
   String formattedInteger = formatted.reversed.join('');
   if (isNegative) formattedInteger = '-' + formattedInteger;
 
-  // تجميع الجزء الصحيح والعشري لو موجود
-  return decimalPart != null
-      ? "$formattedInteger.$decimalPart"
-      : formattedInteger;
+  // إرجاع الجزء الصحيح فقط بدون أرقام عشرية
+  return formattedInteger;
 }
 
 
@@ -124,16 +124,57 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
               // حالة الخطأ
               if (provider.detailsError != null) {
                 return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Error: ${provider.detailsError}'),
-                      SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () => provider.fetchAdDetails(widget.adId),
-                        child: Text("Retry"),
-                      )
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.red,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'خطأ في تحميل تفاصيل الإعلان',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          _getErrorMessage(provider.detailsError!),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => provider.fetchAdDetails(widget.adId),
+                              icon: Icon(Icons.refresh),
+                              label: Text("إعادة المحاولة"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: Icon(Icons.arrow_back),
+                              label: Text("العودة"),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }
@@ -149,6 +190,22 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
         ),
       ),
     );
+  }
+
+  String _getErrorMessage(String error) {
+    if (error.contains('incrementViews')) {
+      return 'هذا الإعلان غير متاح حالياً. يرجى المحاولة لاحقاً أو اختيار إعلان آخر.';
+    } else if (error.contains('500')) {
+      return 'خطأ في الخادم. يرجى المحاولة لاحقاً.';
+    } else if (error.contains('404')) {
+      return 'الإعلان المطلوب غير موجود أو تم حذفه.';
+    } else if (error.contains('Token')) {
+      return 'انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.';
+    } else if (error.contains('network') || error.contains('connection')) {
+      return 'تحقق من اتصال الإنترنت وحاول مرة أخرى.';
+    } else {
+      return 'حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.';
+    }
   }
 
   Widget _buildAdDetails(BuildContext context, CarAdModel car) {
@@ -173,22 +230,19 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
           Stack(
             children: [
               SizedBox(
-                height: 238.h,
+                height: 290.h,
                 width: double.infinity,
                 child: PageView.builder(
                   controller: _pageController,
                   itemCount: images.length,
                   onPageChanged: (index) => setState(() => _currentPage = index),
-                  itemBuilder: (context, index) => Image.network(
-                    images[index],
+                  itemBuilder: (context, index) => CachedNetworkImage(
+                    imageUrl: images[index],
                     key: ValueKey(images[index]),
                     fit: BoxFit.cover,
                     width: double.infinity,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(child: CircularProgressIndicator());
-                    },
-                    errorBuilder: (c, e, s) => Icon(Icons.error, color: Colors.grey),
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) => Icon(Icons.error, color: Colors.grey),
                   ),
                 ),
               ),
@@ -303,6 +357,7 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
               ),
             ],
           ),
+          // تقليل الفراغ أسفل السلايدر بدون تغيير ارتفاعه
           SizedBox(height: 10.h),
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.w),
@@ -320,7 +375,12 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
                           SizedBox(width: 6.w),
                           Text("${formatNumber(car.price.toString())} AED", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.red)),
                           const Spacer(),
-                          Text(car.createdAt?.split('T').first ?? '', style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
+                          Text(car.createdAt?.split('T').first ?? '',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w400,
+                              )),
                         ],
                       ),
                       SizedBox(height: 6.h),
@@ -329,14 +389,47 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
                         style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: KTextColor),
                       ),
                       SizedBox(height: 6.h),
-                      // عرض معلومات السيارة الأساسية
-                      Text(
-                        "Year: ${car.year}  Km: ${NumberFormatter.formatKilometers(car.km)}   Specs: ${car.specs ?? ''}",
-                        style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500),
+                      // عرض معلومات السيارة الأساسية بنفس تنسيق TextSpan المستخدم في SearchCard
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'Year: ',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 15.sp),
+                              children: [
+                                TextSpan(
+                                  text: '${car.year}   ',
+                                  style: TextStyle(fontWeight: FontWeight.w400, color: KTextColor, fontSize: 16.sp),
+                                ),
+                              ],
+                            ),
+                            TextSpan(
+                              text: 'Km: ',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 15.sp),
+                              children: [
+                                TextSpan(
+                                  text: '${NumberFormatter.formatNumber(car.km)}   ',
+                                  style: TextStyle(fontWeight: FontWeight.w400, color: KTextColor, fontSize: 16.sp),
+                                ),
+                              ],
+                            ),
+                            TextSpan(
+                              text: 'Specs: ',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 15.sp),
+                              children: [
+                                TextSpan(
+                                  text: '${car.specs ?? ''}',
+                                  style: TextStyle(fontWeight: FontWeight.w400, color: KTextColor, fontSize: 16.sp),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                       SizedBox(height: 6.h),
                       Text(
-                        " ${car.title} ",
+                        car.title ?? '',
+                        textAlign: TextAlign.start,
                         style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500),
                       ),
                       // SizedBox(height: 6.h),
@@ -415,7 +508,7 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
                     ],
                   ),
                 ),
-                SizedBox(height: 50.h),
+                SizedBox(height: 1.h),
                 Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
                 Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
                 SizedBox(height: 8.h),
@@ -430,29 +523,10 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
                   ),
                 ),
                 SizedBox(height: 8.h),
-                SizedBox(
+                LocationMap(
+                  address: car.area ?? '${car.emirate} ${car.area ?? ''}',
+                  markerTitle: '${car.make} ${car.model}',
                   height: 188.h,
-                  width: double.infinity,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: Image.asset(
-                          'assets/images/map.png',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Positioned(
-                        top: 100.h,
-                        left: 30.w,
-                        right: 30.w,
-                        child: Icon(
-                          Icons.location_pin,
-                          color: Colors.red,
-                          size: 40.sp,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
                 SizedBox(height: 10.h),
                 Divider(color: Color(0xFFB5A9B1), thickness: 1.h),
@@ -475,7 +549,7 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                           "Agent",
+                           car.advertiserType,
                             style: TextStyle(
                               fontSize: 16.sp,
                               fontWeight: FontWeight.w600,
@@ -613,4 +687,5 @@ class _CarDetailsScreenState extends State<CarDetailsScreen> {
       ),
     );
   }
+
 }

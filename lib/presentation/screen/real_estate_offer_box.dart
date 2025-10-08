@@ -1,9 +1,15 @@
-import 'package:advertising_app/data/real_estate_dummy_data.dart';
 import 'package:advertising_app/generated/l10n.dart';
+import 'package:advertising_app/presentation/providers/real_estate_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/real_estate_info_provider.dart';
+import 'package:advertising_app/data/model/real_estate_ad_model.dart';
+import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -11,20 +17,38 @@ const Color KPrimaryColor = Color.fromRGBO(1, 84, 126, 1);
 final Color borderColor = Color.fromRGBO(8, 194, 201, 1);
 
 
-class RealEstateOfeerBOX extends StatefulWidget {
-  const RealEstateOfeerBOX({super.key});
+class RealEstateOfferBOX extends StatefulWidget {
+  const RealEstateOfferBOX({super.key});
 
   @override
-  State<RealEstateOfeerBOX> createState() => _RealEstateOfeerBOXState();
+  State<RealEstateOfferBOX> createState() => _RealEstateOfferBOXState();
 }
 
-class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
+class _RealEstateOfferBOXState extends State<RealEstateOfferBOX> {
+  bool _sortByPriority = false; // Sort switch state - default off
 
-  // +++ تم تحديث المتغيرات لتناسب الأنواع الجديدة للحقول +++
+  @override// +++ تم تحديث المتغيرات لتناسب الأنواع الجديدة للحقول +++
   List<String> _selectedTypes = [];
   List<String> _selectedDistricts = [];
   List<String> _selectedContracts = [];
   String? _priceFrom, _priceTo;
+
+  @override
+  void initState() {
+    super.initState();
+    // جلب البيانات من API عند تحميل الشاشة
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // الاعتماد حصراً على auth_token (قد يكون null لبعض الـ APIs العامة)
+      final storage = const FlutterSecureStorage();
+      final authToken = await storage.read(key: 'auth_token');
+
+      if (mounted) {
+        // Fetch filter options and ads
+        context.read<RealEstateInfoProvider>().fetchAllData(token: authToken);
+        context.read<RealEstateAdProvider>().fetchAds();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,57 +108,90 @@ class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
                   // +++ صف الفلاتر المحدث +++
                   Padding(
                     padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
-                    child: Container(
-                      height: 35.h,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SvgPicture.asset(
-                            'assets/icons/filter.svg',
-                            width: 25.w,
-                            height: 25.h,
+                    child: Consumer<RealEstateInfoProvider>(
+                      builder: (context, infoProvider, child) {
+                        // الحصول على جميع المناطق من جميع الإمارات المتاحة
+                        List<String> allDistricts = infoProvider.emirateDisplayNames
+                            .expand((emirate) => infoProvider.getDistrictsForEmirate(emirate))
+                            .toSet()
+                            .toList();
+
+                        return Container(
+                          height: 35.h,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SvgPicture.asset(
+                                'assets/icons/filter.svg',
+                                width: 25.w,
+                                height: 25.h,
+                              ),
+                              SizedBox(width: 10.w),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildMultiSelectField(
+                                        context, S.of(context).type, _selectedTypes, 
+                                        infoProvider.propertyTypes, // استخدام بيانات حقيقية
+                                        (selection) {
+                                          setState(() => _selectedTypes = selection);
+                                          _applyCurrentFilters();
+                                        }, 
+                                        isFilter: true, 
+                                        isLoading: infoProvider.isLoading
+                                      ),
+                                    ),
+                                    SizedBox(width: 5.w),
+                                    Expanded(
+                                      child: _buildMultiSelectField(
+                                        context, S.of(context).district, _selectedDistricts, 
+                                        allDistricts, // استخدام بيانات حقيقية
+                                        (selection) {
+                                          setState(() => _selectedDistricts = selection);
+                                          _applyCurrentFilters();
+                                        }, 
+                                        isFilter: true, 
+                                        isLoading: infoProvider.isLoading
+                                      ),
+                                    ),
+                                    SizedBox(width: 5.w),
+                                    Expanded(
+                                      child: _buildMultiSelectField(
+                                        context, S.of(context).contract, _selectedContracts, 
+                                        infoProvider.contractTypes, // استخدام بيانات حقيقية
+                                        (selection) {
+                                          setState(() => _selectedContracts = selection);
+                                          _applyCurrentFilters();
+                                        }, 
+                                        isFilter: true, 
+                                        isLoading: infoProvider.isLoading
+                                      ),
+                                    ),
+                                    SizedBox(width: 5.w),
+                                    Expanded(
+                                      child: _buildRangePickerField(
+                                        context, title: S.of(context).price, fromValue: _priceFrom, toValue: _priceTo, unit: "AED", isFilter: true,
+                                        onTap: () async {
+                                          final result = await _showRangePicker(context, title: S.of(context).price, initialFrom: _priceFrom, initialTo: _priceTo, unit: "AED");
+                                          if (result != null) {
+                                            setState(() { 
+                                              _priceFrom = result['from']; 
+                                              _priceTo = result['to']; 
+                                            });
+                                            _applyCurrentFilters();
+                                          }
+                                        },
+                                        onReset: _resetAllFilters,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: 10.w),
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _buildMultiSelectField(
-                                    context, S.of(context).type, _selectedTypes, 
-                                    const ["Apartment", "Villa", "Land", "Building"], 
-                                    (selection) => setState(() => _selectedTypes = selection), isFilter: true),
-                                ),
-                                SizedBox(width: 5.w),
-                                Expanded(
-                                  child: _buildMultiSelectField(
-                                    context, S.of(context).district, _selectedDistricts, 
-                                    const ["Riyadh", "Jeddah", "Dammam"],
-                                    (selection) => setState(() => _selectedDistricts = selection), isFilter: true),
-                                ),
-                                SizedBox(width: 5.w),
-                                Expanded(
-                                  child: _buildMultiSelectField(
-                                    context, S.of(context).contract, _selectedContracts, 
-                                    const ["Sale", "Rent"], 
-                                    (selection) => setState(() => _selectedContracts = selection), isFilter: true),
-                                ),
-                                SizedBox(width: 5.w),
-                                Expanded(
-                                  child: _buildRangePickerField(
-                                    context, title: S.of(context).price, fromValue: _priceFrom, toValue: _priceTo, unit: "AED", isFilter: true,
-                                    onTap: () async {
-                                      final result = await _showRangePicker(context, title: S.of(context).price, initialFrom: _priceFrom, initialTo: _priceTo, unit: "AED");
-                                      if (result != null) {
-                                        setState(() { _priceFrom = result['from']; _priceTo = result['to']; });
-                                      }
-                                    }
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
                   ),
 
@@ -149,13 +206,18 @@ class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
 
                         return Row(
                           children: [
-                            Text(
-                              '${S.of(context).ad} 1000',
-                              style: TextStyle(
-                                fontSize: 12.sp,
-                                color: KTextColor,
-                                fontWeight: FontWeight.w400,
-                              ),
+                            Consumer<RealEstateAdProvider>(
+                              builder: (context, provider, child) {
+                                final adsCount = provider.ads.length;
+                                return Text(
+                                  ' ${S.of(context).ad} $adsCount',
+                                  style: TextStyle(
+                                    fontSize: 12.sp,
+                                    color: KTextColor,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                );
+                              },
                             ),
                             SizedBox(width: 40.w),
                             Expanded(
@@ -187,7 +249,12 @@ class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
                                       child: Transform.scale(
                                         scale: 0.8,
                                         child: Switch(
-                                          value: true, onChanged: (val) {},
+                                          value: _sortByPriority, 
+                                          onChanged: (val) {
+                                            setState(() {
+                                              _sortByPriority = val;
+                                            });
+                                          },
                                           activeColor: Colors.white,
                                           activeTrackColor: const Color.fromRGBO(8, 194, 201, 1),
                                           inactiveThumbColor: Colors.white,
@@ -208,88 +275,212 @@ class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
 
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 5),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: RealEstateDummyData.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 6,
-                        childAspectRatio: .89,
-                      ),
-                      itemBuilder: (context, index) {
-                        final ad = RealEstateDummyData[index];
+                    child: Consumer<RealEstateAdProvider>(
+                      builder: (context, provider, child) {
+                        if (provider.isLoading) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: Container(
-                            width: cardSize.width.w,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4.r),
-                              border: Border.all(color: Colors.grey.shade300),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.15),
-                                  blurRadius: 5.r,
-                                  offset: Offset(0, 2.h),
+                        if (provider.error != null) {
+                          return Center(
+                            child: Column(
+                              children: [
+                                Text(
+                                  'خطأ في تحميل البيانات',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                SizedBox(height: 10.h),
+                                ElevatedButton(
+                                  onPressed: () => provider.fetchAds(),
+                                  child: Text('إعادة المحاولة'),
                                 ),
                               ],
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Stack(children: [
-                                  ClipRRect(
+                          );
+                        }
+
+                        if (provider.ads.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'لا توجد عروض متاحة',
+                              style: TextStyle(
+                                fontSize: 16.sp,
+                                fontWeight: FontWeight.w600,
+                                color: KTextColor,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: provider.ads.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 6,
+                            childAspectRatio: .89,
+                          ),
+                          itemBuilder: (context, index) {
+                            final ad = provider.ads[index];
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              child: GestureDetector(
+                                onTap: () {
+                                  context.push('/real-details/${ad.id}');
+                                },
+                                child: Container(
+                                  width: cardSize.width.w,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
                                     borderRadius: BorderRadius.circular(4.r),
-                                    child: Image.asset(
-                                      ad.image,
-                                      height: (cardSize.height * 0.6).h,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                    ),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.grey.withOpacity(0.15),
+                                        blurRadius: 5.r,
+                                        offset: Offset(0, 2.h),
+                                      ),
+                                    ],
                                   ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Icon(Icons.favorite_border,
-                                        color: Colors.grey.shade300),
-                                  ),
-                                ]),
-                                Expanded(
-                                  child: Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 6.w),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        Text(ad.price, style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 12.sp)),
-                                        Text(ad.details, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                        Text(ad.contact, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: KTextColor)),
-                                        Row(
-                                          children: [
-                                            SvgPicture.asset( 'assets/icons/Vector.svg', width: 10.5.w, height: 13.5.h),
-                                            SizedBox(width: 5),
-                                            Expanded(
-                                              child: Text(ad.location,
-                                                style: TextStyle(fontSize: 12.sp, color: Color.fromRGBO(0, 30, 91, .75), fontWeight: FontWeight.w600),
-                                                overflow: TextOverflow.ellipsis,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.start,
+                                    children: [
+                                      Stack(children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4.r),
+                                        child: ad.mainImage != null && ad.mainImage!.isNotEmpty
+                                            ? Image.network(
+                                                ImageUrlHelper.getFullImageUrl(ad.mainImage!),
+                                                height: (cardSize.height * 0.6).h,
+                                                width: double.infinity,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  print('خطأ في تحميل الصورة: $error');
+                                                  print('رابط الصورة الأصلي: ${ad.mainImage}');
+                                                  print('رابط الصورة المُعدّل: ${ImageUrlHelper.getFullImageUrl(ad.mainImage!)}');
+                                                  return Container(
+                                                    height: (cardSize.height * 0.6).h,
+                                                    width: double.infinity,
+                                                    color: Colors.grey.shade200,
+                                                    child: Icon(
+                                                      Icons.image_not_supported,
+                                                      color: Colors.grey.shade400,
+                                                      size: 40.sp,
+                                                    ),
+                                                  );
+                                                },
+                                                loadingBuilder: (context, child, loadingProgress) {
+                                                  if (loadingProgress == null) return child;
+                                                  return Container(
+                                                    height: (cardSize.height * 0.6).h,
+                                                    width: double.infinity,
+                                                    color: Colors.grey.shade200,
+                                                    child: Center(
+                                                      child: CircularProgressIndicator(
+                                                        value: loadingProgress.expectedTotalBytes != null
+                                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                                loadingProgress.expectedTotalBytes!
+                                                            : null,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              )
+                                            : Container(
+                                                height: (cardSize.height * 0.6).h,
+                                                width: double.infinity,
+                                                color: Colors.grey.shade200,
+                                                child: Icon(
+                                                  Icons.image,
+                                                  color: Colors.grey.shade400,
+                                                  size: 40.sp,
+                                                ),
                                               ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Icon(Icons.favorite_border,
+                                            color: Colors.grey.shade300),
+                                      ),
+                                    ]),
+                                    Expanded(
+                                      child: Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(horizontal: 6.w),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            Text(
+                                              ad.price != null ? NumberFormatter.formatPrice(ad.price) : 'السعر غير محدد',
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12.sp,
+                                              ),
+                                            ),
+                                            Text(
+                                             "${ad.propertyType} ${ad.contractType}",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12.sp,
+                                                color: KTextColor,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              ad.advertiserName,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12.sp,
+                                                color: KTextColor,
+                                              ),
+                                            ),
+                                            Row(
+                                              children: [
+                                                SvgPicture.asset(
+                                                  'assets/icons/Vector.svg',
+                                                  width: 10.5.w,
+                                                  height: 13.5.h,
+                                                ),
+                                                SizedBox(width: 5),
+                                                Expanded(
+                                                  child: Text(
+                                                   " ${ad.emirate} ${ad.district}" ?? 'الموقع غير محدد',
+                                                    style: TextStyle(
+                                                      fontSize: 12.sp,
+                                                      color: Color.fromRGBO(0, 30, 91, .75),
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          );
+                          },
                         );
                       },
                     ),
@@ -302,6 +493,48 @@ class _RealEstateOfeerBOXState extends State<RealEstateOfeerBOX> {
             ),
           ),
         ));
+  }
+
+  // Apply current filters to the offers
+  void _applyCurrentFilters() {
+    // Build filters map like in real_estate_search_screen.dart
+    Map<String, dynamic> filters = {};
+    
+    if (_selectedTypes.isNotEmpty) {
+      filters['property_type'] = _selectedTypes.join(',');
+    }
+    
+    if (_selectedDistricts.isNotEmpty) {
+      filters['district'] = _selectedDistricts.join(',');
+    }
+    
+    if (_selectedContracts.isNotEmpty) {
+      filters['contract_type'] = _selectedContracts.join(',');
+    }
+    
+    if (_priceFrom != null && _priceFrom!.isNotEmpty) {
+      filters['price_from'] = _priceFrom;
+    }
+    
+    if (_priceTo != null && _priceTo!.isNotEmpty) {
+      filters['price_to'] = _priceTo;
+    }
+    
+    // Use RealEstateAdProvider's fetchAds method with filters
+    context.read<RealEstateAdProvider>().fetchAds(filters: filters);
+  }
+
+  // Reset all filters
+  void _resetAllFilters() {
+    setState(() {
+      _selectedTypes.clear();
+      _selectedDistricts.clear();
+      _selectedContracts.clear();
+      _priceFrom = null;
+      _priceTo = null;
+    });
+    // Fetch all ads without filters
+    context.read<RealEstateAdProvider>().fetchAds();
   }
 }
 
@@ -319,7 +552,7 @@ Size getCardSize(double screenWidth) {
 
 // ... (باقي الكود ودوال المساعدة واللوحات السفلية تبقى كما هي)
 
-Widget _buildMultiSelectField(BuildContext context, String title, List<String> selectedValues, List<String> allItems, Function(List<String>) onConfirm, {bool isFilter = false}) {
+Widget _buildMultiSelectField(BuildContext context, String title, List<String> selectedValues, List<String> allItems, Function(List<String>) onConfirm, {bool isFilter = false, bool isLoading = false}) {
     final s = S.of(context);
     String displayText = selectedValues.isEmpty ? title : selectedValues.join(', ');
 
@@ -329,7 +562,7 @@ Widget _buildMultiSelectField(BuildContext context, String title, List<String> s
          if(!isFilter) Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14)),
          if(!isFilter) const SizedBox(height: 4),
         GestureDetector(
-          onTap: () async {
+          onTap: isLoading ? null : () async {
             final result = await showModalBottomSheet<List<String>>(
               context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
               builder: (context) => _MultiSelectBottomSheet(title: title, items: allItems, initialSelection: selectedValues),
@@ -342,22 +575,31 @@ Widget _buildMultiSelectField(BuildContext context, String title, List<String> s
             padding: const EdgeInsets.symmetric(horizontal: 8), 
             alignment: Alignment.center, 
             decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)),
-            child: Text(
-              displayText,
-              style: TextStyle(
-                fontWeight: selectedValues.isEmpty ? FontWeight.w500 : FontWeight.w500,
-                color: selectedValues.isEmpty ? KTextColor : KTextColor,
-                fontSize: 9.5
-              ),
-              overflow: TextOverflow.ellipsis, maxLines: 1,
-            ),
+            child: isLoading 
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(KPrimaryColor),
+                  ),
+                )
+              : Text(
+                  displayText,
+                  style: TextStyle(
+                    fontWeight: selectedValues.isEmpty ? FontWeight.w500 : FontWeight.w500,
+                    color: selectedValues.isEmpty ? KTextColor : KTextColor,
+                    fontSize: 9.5
+                  ),
+                  overflow: TextOverflow.ellipsis, maxLines: 1,
+                ),
           ),
         ),
       ],
     );
 }
 
-Widget _buildRangePickerField(BuildContext context, {required String title, String? fromValue, String? toValue, required String unit, required VoidCallback onTap, bool isFilter = false}) {
+Widget _buildRangePickerField(BuildContext context, {required String title, String? fromValue, String? toValue, required String unit, required VoidCallback onTap, bool isFilter = false, VoidCallback? onReset}) {
     final s = S.of(context);
     String displayText;
       displayText = (fromValue == null || fromValue.isEmpty) && (toValue == null || toValue.isEmpty) 
@@ -369,19 +611,61 @@ Widget _buildRangePickerField(BuildContext context, {required String title, Stri
       children: [
         if(!isFilter) Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14)),
         if(!isFilter) const SizedBox(height: 4),
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            height: isFilter ? 35 : 48, 
-            width: double.infinity, 
-            padding: const EdgeInsets.symmetric(horizontal: 8), 
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)),
-            child: Text(displayText, style: TextStyle(
-              fontWeight: (fromValue == null || fromValue.isEmpty) && (toValue == null || toValue.isEmpty) ? FontWeight.w500 : FontWeight.w500,
-              color: (fromValue == null || fromValue.isEmpty) && (toValue == null || toValue.isEmpty) ? KTextColor : KTextColor,
-              fontSize: 9.5), 
-              overflow: TextOverflow.ellipsis, maxLines: 1),
+        Container(
+          height: isFilter ? 35 : 48, 
+          width: double.infinity, 
+          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8), 
+                    alignment: Alignment.center,
+                    child: Text(displayText, style: TextStyle(
+                      fontWeight: (fromValue == null || fromValue.isEmpty) && (toValue == null || toValue.isEmpty) ? FontWeight.w500 : FontWeight.w500,
+                      color: (fromValue == null || fromValue.isEmpty) && (toValue == null || toValue.isEmpty) ? KTextColor : KTextColor,
+                      fontSize: 9.5), 
+                      overflow: TextOverflow.ellipsis, maxLines: 1),
+                  ),
+                ),
+              ),
+              if (onReset != null) ...[
+                Container(
+                  width: 1,
+                  height: 20,
+                  color: borderColor,
+                ),
+                // GestureDetector(
+                //   onTap: onReset,
+                //   child: Container(
+                //     width: 40,
+                //     height: double.infinity,
+                //     decoration: BoxDecoration(
+                //       color: Colors.red.shade50,
+                //       borderRadius: BorderRadius.only(
+                //         topRight: Radius.circular(7),
+                //         bottomRight: Radius.circular(7),
+                //       ),
+                //     ),
+                //     child:
+                //      Center(
+                //       child: Text(
+                //         'reset',
+                //         style: TextStyle(
+                //           color: Colors.red.shade700,
+                //           fontSize: 8,
+                //           fontWeight: FontWeight.w500,
+                //         ),
+                //       ),
+                //     ),
+                //   ),
+                // ),
+              
+              
+              ],
+            ],
           ),
         ),
       ],

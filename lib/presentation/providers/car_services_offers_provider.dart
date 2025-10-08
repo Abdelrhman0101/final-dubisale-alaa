@@ -1,7 +1,6 @@
 // lib/presentation/providers/car_services_offers_provider.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:advertising_app/data/model/car_service_ad_model.dart';
 import 'package:advertising_app/data/repository/car_services_ad_repository.dart';
 // import 'package:advertising_app/data/repository/car_services_offers_repository.dart';
@@ -10,7 +9,6 @@ import 'package:advertising_app/data/web_services/api_service.dart';
 class CarServicesOffersProvider extends ChangeNotifier {
   final CarServicesAdRepository _repository;
   // final CarServicesOffersRepository _offersRepository;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   CarServicesOffersProvider() : _repository = CarServicesAdRepository(ApiService());
                                // _offersRepository = CarServicesOffersRepository(ApiService());
@@ -40,12 +38,8 @@ class CarServicesOffersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) {
-        throw Exception('Authentication token not found!');
-      }
-
-      final ads = await _repository.getOfferAds(token: token, filters: filters);
+      // Public endpoint: browsing offers must NOT require authentication token
+      final ads = await _repository.getOfferAds(filters: filters);
       _allFetchedOfferAds = ads;
       _offerAds = List.from(ads); // نسخ البيانات للفلترة
     } catch (e) {
@@ -143,8 +137,7 @@ class CarServicesOffersProvider extends ChangeNotifier {
   // جلب المناطق من API
   Future<void> fetchDistricts() async {
     try {
-      final token = await _storage.read(key: 'access_token') ?? '';
-      final response = await _repository.getEmirates(token: token);
+      final response = await _repository.getEmirates();
       final allDistricts = <String>{};
       
       for (final emirate in response) {
@@ -155,7 +148,7 @@ class CarServicesOffersProvider extends ChangeNotifier {
       _districts.sort();
       notifyListeners();
     } catch (e) {
-      print('Error fetching districts: $e');
+      // print('Error fetching districts: $e');
     }
   }
 

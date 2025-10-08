@@ -1615,6 +1615,16 @@ class S {
     );
   }
 
+  /// `No restaurants found`
+  String get no_restaurants_found {
+    return Intl.message(
+      'No restaurants found',
+      name: 'no_restaurants_found',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Other Services Ads`
   String get otherServicesAds {
     return Intl.message(

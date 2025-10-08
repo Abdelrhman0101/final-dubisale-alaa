@@ -637,7 +637,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     onChanged: _searchPlaces,
                     style: const TextStyle(color: MyColor.KTextColor),
                     decoration: InputDecoration(
-                      hintText: "searchForLocation",
+                      hintText: "Search for location",
+                      hintStyle: TextStyle(color: KTextColor),
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
@@ -741,12 +742,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         }
                       : null,
                   style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
                     padding: EdgeInsets.symmetric(vertical: 15.h),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                   ),
-                  child: Text("l10n.confirmLocation"),
+                  child: Text("Confirm location",style: TextStyle(color: Colors.white),),
                 ),
               ],
             ),

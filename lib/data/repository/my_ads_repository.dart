@@ -5,7 +5,7 @@ class MyAdsRepository {
   final ApiService _apiService;
   MyAdsRepository(this._apiService);
 
-  Future<MyAdsResponse> getMyAds({required String token}) async {
+  Future<MyAdsResponse> getMyAds({String? token}) async {
     // يمكن إضافة query parameters هنا إذا احتجت للـ pagination
     // مثال: final response = await _apiService.get('/api/my-ads', token: token, query: {'page': 1});
     final response = await _apiService.get('/api/my-ads', token: token);

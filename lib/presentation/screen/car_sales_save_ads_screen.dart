@@ -93,15 +93,23 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
   void _onSaveChanges() async {
       final provider = Provider.of<CarAdProvider>(context, listen: false);
       
-      bool success = await provider.updateAd(
-        adId: widget.adId,
-        price: _priceController.text,
-        description: _descriptionController.text,
-        phoneNumber: selectedPhoneNumber ?? '', // التأكد من عدم إرسال null
-        whatsapp: selectedWhatsAppNumber,
-        mainImage: _mainImageFile, // قد تكون null إذا لم يغير المستخدم الصورة
-        thumbnailImages: _thumbnailImageFiles.isNotEmpty ? _thumbnailImageFiles : null,
-      );
+      // Create the update data map
+      Map<String, dynamic> updateData = {
+        'price': _priceController.text,
+        'description': _descriptionController.text,
+        'phoneNumber': selectedPhoneNumber ?? '',
+        'whatsapp': selectedWhatsAppNumber,
+      };
+      
+      // Add images if they exist
+      if (_mainImageFile != null) {
+        updateData['mainImage'] = _mainImageFile;
+      }
+      if (_thumbnailImageFiles.isNotEmpty) {
+        updateData['thumbnailImages'] = _thumbnailImageFiles;
+      }
+      
+      bool success = await provider.updateAd(updateData, widget.adId.toString());
 
       if (mounted) {
           if (success) {
