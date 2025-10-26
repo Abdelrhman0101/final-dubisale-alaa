@@ -3,6 +3,7 @@
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/data/model/job_ad_model.dart';
 import 'package:advertising_app/presentation/providers/job_details_provider.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,8 @@ import 'package:readmore/readmore.dart';
 import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:advertising_app/presentation/widget/location_map.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 // تعريف الثوابت
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -30,10 +33,11 @@ class JobDetailsScreen extends StatefulWidget {
   State<JobDetailsScreen> createState() => _JobDetailsScreenState();
 }
 
-class _JobDetailsScreenState extends State<JobDetailsScreen> {
+class _JobDetailsScreenState extends State<JobDetailsScreen> with FavoritesHelper {
   @override
   void initState() {
     super.initState();
+    loadFavoriteIds();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JobDetailsProvider>().fetchAdDetails(widget.adId);
     });
@@ -140,14 +144,16 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
                       top: 40.h,
                       left: isArabic ? 16.w : null,
                       right: isArabic ? null : 16.w,
-                      child: Icon(Icons.favorite_border,
-                          color: Colors.white,
-                          size: 30.sp,
-                          shadows: [
-                            Shadow(
-                                color: Colors.black.withOpacity(0.5),
-                                blurRadius: 2)
-                          ])),
+                      child: buildFavoriteIcon(
+                        JobAdItemAdapter(ad),
+                        onAddToFavorite: () {
+                          // Add to favorites callback
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                          );
+                        },
+                        onRemoveFromFavorite: null, // No delete callback for details screen
+                      )),
                   Positioned(
                       top: 80.h,
                       left: isArabic ? 16.w : null,
@@ -426,5 +432,56 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
             child: Icon(Icons.location_pin, color: Colors.red, size: 40.sp)),
       ]),
     );
+  }
+}
+
+// Adapter class to make JobAdModel compatible with FavoriteItemInterface
+class JobAdItemAdapter implements FavoriteItemInterface {
+  final JobAdModel job;
+
+  JobAdItemAdapter(this.job);
+
+  @override
+  String get id => job.id.toString();
+
+  @override
+  String get title => job.title ?? '';
+
+  @override
+  String get location =>  '';
+
+  @override
+  String get price => job.salary?.toString() ?? '';
+
+  @override
+  String get line1 => job.title ?? '';
+
+  @override
+  String get details => job.description ?? '';
+
+  @override
+  String get date => job.createdAt ?? '';
+
+  @override
+  String get contact => job.phoneNumber ?? '';
+
+  @override
+  bool get isPremium => job.isPremium ?? false;
+
+  @override
+  List<String> get images => job.images ?? [];
+
+  @override
+  String get category => 'jobs';
+
+  @override
+  String get addCategory => 'Jop';
+
+  @override
+  AdPriority get priority {
+    if (job.isPremium == true) {
+      return AdPriority.premium;
+    }
+    return AdPriority.free;
   }
 }

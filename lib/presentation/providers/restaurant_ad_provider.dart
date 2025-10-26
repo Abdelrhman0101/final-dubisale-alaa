@@ -155,7 +155,7 @@ class RestaurantAdProvider with ChangeNotifier {
       if (district.isNotEmpty && district != 'null') locationParts.add(district);
       if (area.isNotEmpty && area != 'null') locationParts.add(area);
       
-      locationText = locationParts.isNotEmpty ? locationParts.join('/') : 'nullnow';
+      locationText = locationParts.isNotEmpty ? locationParts.join('/') : 'Unknown Location';
       
       return RestaurantAdItem(
         id: _nullToString(restaurant['id']),
@@ -171,8 +171,9 @@ class RestaurantAdProvider with ChangeNotifier {
         priority: _getPriorityFromPlanType(planType),
         createdAt: _nullToString(restaurant['created_at']),
         category: _nullToString(restaurant['category']),
-        emirate: emirate.isNotEmpty ? emirate : 'nullnow',
-        district: district.isNotEmpty ? district : 'nullnow',
+        addCategory: _nullToString(restaurant['add_category'] ?? 'restaurant'), // Add category from API
+        emirate: emirate.isNotEmpty ? emirate : 'Unknown',
+        district: district.isNotEmpty ? district : 'Unknown',
         // الخصائص الإضافية المطلوبة
         contact: _nullToString(restaurant['advertiser_name']),
         date: _formatDateOnly(restaurant['created_at']),
@@ -188,15 +189,15 @@ class RestaurantAdProvider with ChangeNotifier {
     }).toList();
   }
   
-  // --- تحويل null إلى "nullnow" ---
+  // --- تحويل null إلى قيم افتراضية مناسبة ---
   String _nullToString(dynamic value) {
-    if (value == null) return 'nullnow';
+    if (value == null) return '';
     return value.toString();
   }
   
   // --- تنسيق التاريخ بدون الوقت ---
   String _formatDateOnly(dynamic dateValue) {
-    if (dateValue == null) return 'nullnow';
+    if (dateValue == null) return 'Unknown Date';
     try {
       final dateTime = DateTime.parse(dateValue.toString());
       return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
@@ -422,9 +423,17 @@ class RestaurantAdItem implements FavoriteItemInterface {
   @override
   final String line1;
   
-  final String category;
+  final String _category; // Renamed to avoid conflict
+  final String _addCategory; // Add category field from API
   final String emirate;
   final String district;
+  
+  // Getter for FavoriteItemInterface category property
+  @override
+  String get category => _category; // Return the category field
+
+  @override
+  String get addCategory => _addCategory; // Dynamic category for API
   
   RestaurantAdItem({
     required this.id,
@@ -437,7 +446,8 @@ class RestaurantAdItem implements FavoriteItemInterface {
     required this.whatsapp,
     required this.priority,
     required this.createdAt,
-    required this.category,
+    required String category, // Parameter name remains the same
+    required String addCategory, // Add category parameter
     required this.emirate,
     required this.district,
     required this.contact,
@@ -446,5 +456,5 @@ class RestaurantAdItem implements FavoriteItemInterface {
     required this.images,
     required this.isPremium,
     required this.line1,
-  });
+  }) : _category = category, _addCategory = addCategory; // Initialize both private fields
 }

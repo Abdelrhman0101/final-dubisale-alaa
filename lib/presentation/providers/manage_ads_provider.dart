@@ -11,6 +11,9 @@ class MyAdsProvider with ChangeNotifier {
   final ManageAdsRepository _myAdsRepository;
   MyAdsProvider(this._myAdsRepository);
 
+  // التخزين الآمن مثل JobAdProvider لضمان نفس المصدر
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
   // --- حالات Provider ---
   bool _isLoading = false;
   String? _error;
@@ -41,12 +44,13 @@ class MyAdsProvider with ChangeNotifier {
     }
 
     try {
-      final token = await const FlutterSecureStorage().read(key: 'auth_token');
+      final token = await _storage.read(key: 'auth_token');
       if (token == null) {
         throw Exception('User is not authenticated.');
       }
       
-      final response = await _myAdsRepository.getMyAds();
+      // Pass token to repository to avoid 401 Unauthorized
+      final response = await _myAdsRepository.getMyAds(token: token);
       _allAds = response.ads;
       
       // إعادة تطبيق الفلتر الحالي
@@ -186,7 +190,7 @@ class MyAdsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final token = await const FlutterSecureStorage().read(key: 'auth_token');
+      final token = await _storage.read(key: 'auth_token');
       if (token == null) {
         _activationError = 'Authentication token not found. Please login again.';
         return false;
@@ -242,6 +246,32 @@ class MyAdsProvider with ChangeNotifier {
       _isActivatingOffer = false;
       _activatingAdId = null; // أعد تعيين ID الإعلان
       notifyListeners();
+    }
+  }
+
+  // دالة حذف إعلان بحسب الفئة
+  Future<bool> deleteAd({
+    required MyAdModel ad,
+  }) async {
+    try {
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null) {
+        _error = 'Authentication token not found. Please login again.';
+        safeNotifyListeners();
+        return false;
+      }
+
+      await _myAdsRepository.deleteAd(token: token, id: ad.id, category: ad.category);
+
+      // إزالة الإعلان محلياً من القوائم وإبلاغ الواجهة
+      _allAds.removeWhere((a) => a.id == ad.id);
+      _filteredAds.removeWhere((a) => a.id == ad.id);
+      safeNotifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      safeNotifyListeners();
+      return false;
     }
   }
 }

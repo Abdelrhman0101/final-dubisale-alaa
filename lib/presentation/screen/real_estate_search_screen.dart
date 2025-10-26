@@ -35,6 +35,11 @@ class RealEstateAdCardAdapter implements FavoriteItemInterface {
   @override
   String get details => "${_ad.propertyType} ${_ad.contractType}";
   @override
+  String get category => 'Real State'; // Category for real estate
+  
+  @override
+  String get addCategory => _ad.addCategory ?? 'Real State'; // Use dynamic category from API or fallback
+  @override
   String get imageUrl => ImageUrlHelper.getMainImageUrl(_ad.mainImage ?? '');
   @override
   List<String> get images => [

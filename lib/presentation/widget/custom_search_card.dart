@@ -1,14 +1,21 @@
 import 'package:advertising_app/constant/string.dart';
 import 'package:advertising_app/constant/image_url_helper.dart';
+import 'package:advertising_app/data/model/favorites_response_model.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/data/model/ad_priority.dart';
 import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+
+// Color constants
+const Color KPrimaryColor = Color.fromRGBO(1, 84, 126, 1);
+const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
+const Color KSecondaryColor = Color.fromRGBO(255, 193, 7, 1);
 
 class SearchCard extends StatefulWidget {
   final FavoriteItemInterface item;
@@ -20,6 +27,7 @@ class SearchCard extends StatefulWidget {
   final List<Widget>? customActionButtons;
   // اختياري: صورة مخصصة لعرضها بدل صور العنصر
   final String? customImageUrl;
+  
   // اختياري: ويدجت مخصص في أسفل الكارد (مثل معلومات التواصل)
   final Widget? customBottomWidget;
 
@@ -34,13 +42,14 @@ class SearchCard extends StatefulWidget {
     this.customActionButtons,
     this.customImageUrl,
     this.customBottomWidget,
+    
   });
 
   @override
   State<SearchCard> createState() => _SearchCardState();
 }
 
-class _SearchCardState extends State<SearchCard> {
+class _SearchCardState extends State<SearchCard> with FavoritesHelper {
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -48,6 +57,7 @@ class _SearchCardState extends State<SearchCard> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when widget initializes
   }
 
   @override
@@ -88,6 +98,7 @@ class _SearchCardState extends State<SearchCard> {
       );
     }
 
+
     // خلاف ذلك نعاملها كأصل محلي (assets) باستخدام المسار الأصلي
     return Image.asset(
       imagePath,
@@ -125,6 +136,7 @@ class _SearchCardState extends State<SearchCard> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Stack(
@@ -188,6 +200,7 @@ class _SearchCardState extends State<SearchCard> {
           Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
@@ -322,36 +335,11 @@ class _SearchCardState extends State<SearchCard> {
   }
 
   Widget _buildTopRightIcon() {
-    if (widget.onAddToFavorite != null) {
-      return IconButton(icon: const Icon(Icons.favorite_border, color: Colors.grey), onPressed: _handleAddToFavorite);
-    } else if (widget.showDelete) {
-      return IconButton(icon: const Icon(Icons.favorite, color: Colors.red), onPressed: widget.onDelete);
-    } else {
-      return const SizedBox.shrink();
-    }
-  }
-
-  void _handleAddToFavorite() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(S.of(context).add_to_favorite, style: const TextStyle(color: KTextColor, fontSize: 16)),
-        content: Text(S.of(context).confirm_add_to_favorite, style: const TextStyle(color: KTextColor, fontSize: 18)),
-        actions: [
-          TextButton(
-            child: Text(S.of(context).cancel, style: const TextStyle(color: KTextColor, fontSize: 20)),
-            onPressed: () => Navigator.pop(context),
-          ),
-          TextButton(
-            child: Text(S.of(context).yes, style: const TextStyle(color: KTextColor, fontSize: 20)),
-            onPressed: () {
-              Navigator.pop(context);
-              widget.onAddToFavorite?.call();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(S.of(context).added_to_favorite)));
-            },
-          ),
-        ],
-      ),
+    return buildFavoriteIcon(
+      widget.item,
+      onAddToFavorite: widget.onAddToFavorite,
+      onRemoveFromFavorite: widget.showDelete ? widget.onDelete : null,
     );
   }
+
 }

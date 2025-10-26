@@ -7,6 +7,9 @@ import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:advertising_app/data/web_services/api_service.dart';
+import 'package:advertising_app/presentation/widget/custom_text_field.dart';
 
 class SettingScreen extends StatefulWidget {
   final LocaleChangeNotifier notifier;
@@ -20,6 +23,13 @@ class SettingScreen extends StatefulWidget {
 class _SettingScreenState extends State<SettingScreen> {
   bool _isInvisible = true;
   bool _isNotificationsEnabled = true;
+  
+  // Add properties for advertiser check functionality
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final ApiService _apiService = ApiService();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
 
   void _showToast(BuildContext context, String message) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -69,9 +79,10 @@ class _SettingScreenState extends State<SettingScreen> {
                 ),
                 SizedBox(height: 10 * scaleFactor),
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
                       _buildTile(
                         context: context,
                         height: tileHeight,
@@ -83,7 +94,7 @@ class _SettingScreenState extends State<SettingScreen> {
                           height: iconSize,
                         ),
                         title: S.of(context).myProfile,
-                        ontap: () => context.push('/editprofile'),
+                        ontap: () => _checkAdvertiserAndNavigateToProfile(),
                       ),
                       SizedBox(height: 7 * scaleFactor),
                       _buildTile(
@@ -243,6 +254,7 @@ class _SettingScreenState extends State<SettingScreen> {
                       ),
                     ],
                   ),
+                ),
                 ),
               ],
             ),
@@ -419,7 +431,7 @@ class _SettingScreenState extends State<SettingScreen> {
         title: Text(
           title,
           style: TextStyle(
-            color: KTextColor,
+            color: Color(0xFF001E5B),
             fontWeight: FontWeight.w500,
             fontSize: fontSize,
           ),
@@ -442,5 +454,242 @@ class _SettingScreenState extends State<SettingScreen> {
         onTap: ontap,
       ),
     );
+  }
+
+  // Method to check if user is advertiser and navigate to profile
+  Future<void> _checkAdvertiserAndNavigateToProfile() async {
+    try {
+      final userType = await _storage.read(key: 'user_type');
+      print('User type from storage: $userType');
+      
+      if (userType == 'advertiser') {
+        // User is already an advertiser, navigate to profile
+        if (mounted) {
+          context.push('/editprofile');
+        }
+      } else {
+        // User is not an advertiser, show password dialog
+        _showNonAdvertiserDialog();
+      }
+    } catch (e) {
+      print('Error checking user type: $e');
+      // On error, show the dialog to be safe
+      _showNonAdvertiserDialog();
+    }
+  }
+
+  // Method to set password and upgrade to advertiser
+  Future<void> _setPassword() async {
+    if (_passwordController.text.isEmpty || _confirmPasswordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى ملء جميع الحقول'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_passwordController.text != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('كلمات المرور غير متطابقة'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Get user ID from storage
+      final userIdStr = await _storage.read(key: 'user_id');
+      if (userIdStr == null) {
+        throw Exception('User ID not found');
+      }
+
+      final userId = int.parse(userIdStr);
+
+      // Get auth token
+      final authToken = await _storage.read(key: 'auth_token');
+
+      // Make API call
+      final response = await _apiService.post(
+        '/api/set-password',
+        data: {
+          'userId': userId,
+          'password': _passwordController.text,
+          'password_confirmation': _confirmPasswordController.text,
+        },
+        token: authToken,
+      );
+      if (response['token'] != null) {
+        await _storage.write(key: 'auth_token', value: response['token']);
+      }
+
+      // Success - Update user_type in cache to advertiser
+      await _storage.write(key: 'user_type', value: 'advertiser');
+      
+      Navigator.of(context).pop(); // Close dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تعيين كلمة المرور بنجاح وتم ترقية حسابك إلى معلن'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Clear controllers
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+
+      // Navigate to profile after successful upgrade
+      if (mounted) {
+        context.push('/editprofile');
+      }
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تعيين كلمة المرور: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showNonAdvertiserDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              title: const Text(
+                'Secure Your Account',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1B365D),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Before accessing your profile, please set a password to upgrade to an Advertiser account.',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF666666),
+                        height: 1.4,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Password field
+                    CustomTextField(
+                      controller: _passwordController,
+                      hintText: 'Enter Password',
+                      isPassword: true,
+                      prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B365D)),
+                    ),
+                    const SizedBox(height: 15),
+                    
+                    // Confirm Password field
+                    CustomTextField(
+                      controller: _confirmPasswordController,
+                      hintText: 'Confirm Password',
+                      isPassword: true,
+                      prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B365D)),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _passwordController.clear();
+                          _confirmPasswordController.clear();
+                        },
+                        style: TextButton.styleFrom(
+                           backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                        
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            //side: const BorderSide(color: Color(0xFF1B365D)),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _setPassword,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Set Password',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
   }
 }

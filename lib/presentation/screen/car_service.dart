@@ -308,7 +308,12 @@ class _CarServiceState extends State<CarService> {
                         color: KTextColor)),
                 const Spacer(),
                 InkWell(
-                    onTap: () {},
+                    onTap: () {
+                        final advertiserId = garage.id.toString();
+                        debugPrint('Navigating to all ads with advertiser ID: $advertiserId');
+                        context.push('/all_ad_car_sales/$advertiserId');
+                    
+                    },
                     child: Text(S.of(context).see_all_ads,
                         style: TextStyle(
                             fontSize: 14.sp,

@@ -36,6 +36,10 @@ class CarServiceAdCardAdapter implements FavoriteItemInterface {
   @override
   String get details => _ad.serviceType;
   @override
+  String get category => 'Car Services'; // Category for car services
+  
+  @override String get addCategory => 'Car Services'; // Dynamic category for API
+  @override
   String get imageUrl => ImageUrlHelper.getMainImageUrl(_ad.mainImage ?? '');
   @override
   List<String> get images {

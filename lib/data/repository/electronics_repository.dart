@@ -88,26 +88,63 @@ class ElectronicsRepository {
        data: textData,
        mainImage: adData['mainImage'] as File,
        thumbnailImages: adData['thumbnailImages'] as List<File>,
-
+       token: token,
      );
   }
 
   Future<ElectronicAdResponse> getElectronicAds({ Map<String, dynamic>? query}) async {
-    // 1. استدعاء الـ API
-    final response = await _apiService.get('/api/electronics', query: query);
-
-    // 2. التحقق من شكل الاستجابة
-    if (response is Map<String, dynamic>) {
-      // 3. تحويل الـ JSON إلى الكائنات التي أنشأناها
-      return ElectronicAdResponse.fromJson(response);
+    try {
+      final response = await _apiService.get('/api/electronics', query: query);
+      
+      // Case 1: Response is a Map with expected structure
+      if (response is Map<String, dynamic>) {
+        // Check if response has the expected structure
+        if (response.containsKey('data') || response.containsKey('total')) {
+          return ElectronicAdResponse.fromJson(response);
+        }
+        
+        // Case 2: Response is a Map but with different structure (e.g., direct list in 'ads' key)
+        if (response.containsKey('ads')) {
+          return ElectronicAdResponse(
+            ads: (response['ads'] as List?)?.map((json) => ElectronicAdModel.fromJson(json)).toList() ?? [],
+            total: response['total_ads'] ?? response['totalAds'] ?? response['count'] ?? 0,
+          );
+        }
+        
+        // Case 3: Response is a Map but might be an error response
+        if (response.containsKey('error') || response.containsKey('message')) {
+          throw Exception('API Error: ${response['error'] ?? response['message']}');
+        }
+        
+        // Case 4: Empty or unexpected Map structure - return empty response
+        return ElectronicAdResponse(ads: [], total: 0);
+      }
+      
+      // Case 5: Response is a List (direct list of ads)
+      if (response is List) {
+        return ElectronicAdResponse(
+          ads: response.map((json) => ElectronicAdModel.fromJson(json)).toList(),
+          total: response.length,
+        );
+      }
+      
+      // Case 6: Response is null or empty
+      if (response == null) {
+        return ElectronicAdResponse(ads: [], total: 0);
+      }
+      
+      // Case 7: Unexpected response type
+      throw Exception('Unexpected API response type: ${response.runtimeType}. Response: $response');
+      
+    } catch (e) {
+      // If it's already our custom exception, re-throw it
+      if (e.toString().contains('API Error:') || e.toString().contains('Unexpected API response type:')) {
+        rethrow;
+      }
+      
+      // For other exceptions, wrap them with context
+      throw Exception('Exception: API response format is not as expected for ElectronicsAdResponse. Original error: $e');
     }
-    // 404-safe: بعض الحالات قد تعيد قائمة فارغة عند عدم وجود نتائج
-    if (response is List) {
-      return ElectronicAdResponse(ads: const [], total: 0);
-    }
-
-    // 404-safe: شكل غير متوقع -> إرجاع نتائج فارغة
-    return ElectronicAdResponse(ads: const [], total: 0);
   }
 
 
@@ -118,6 +155,36 @@ Future<ElectronicAdModel> getElectronicAdDetails({required int adId, }) async {
       return ElectronicAdModel.fromJson(response['data'] ?? response);
     }
     throw Exception('Failed to parse electronic ad details.');
+  }
+
+  // دالة لتحديث إعلان إلكترونيات موجود
+  Future<void> updateElectronicsAd({
+    required int adId,
+    required String token,
+    // الحقول القابلة للتعديل فقط
+    required String price,
+    required String description,
+    required String phoneNumber,
+    String? whatsappNumber,
+    File? mainImage, // قد تكون null إذا لم يغيرها المستخدم
+    List<File>? thumbnailImages, // قد تكون null
+  }) async {
+    final Map<String, dynamic> textData = {
+      '_method': 'PUT',
+      'price': price,
+      'description': description,
+      'phone_number': phoneNumber,
+      'whatsapp_number': whatsappNumber,
+    };
+
+    // استخدام postFormData مع _method: PUT كما هو مطلوب
+    await _apiService.postFormData(
+      '/api/electronics/$adId',
+      data: textData,
+      mainImage: mainImage,
+      thumbnailImages: thumbnailImages,
+      token: token,
+    );
   }
 
    Future<List<ElectronicAdModel>> getOffersBoxAds({ Map<String, dynamic>? query}) async {

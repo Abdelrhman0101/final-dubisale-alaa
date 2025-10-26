@@ -130,7 +130,7 @@ class AuthProvider with ChangeNotifier {
         await _storage.write(key: 'user_id', value: _userId.toString());
         await _storage.write(key: 'user_type', value: _userType!);
         await _storage.write(key: 'user_phone', value: phone); // حفظ رقم الهاتف
-        await _storage.write(key: 'verify_account', value: 'false');
+      //  await _storage.write(key: 'verify_account', value: 'false');
         // حفظ موقع المعلن القادم من الـ API إن توفر
         if (userData['advertiser_location'] != null && (userData['advertiser_location'] as String).trim().isNotEmpty) {
           await _storage.write(key: 'user_address', value: (userData['advertiser_location'] as String).trim());
@@ -148,6 +148,67 @@ class AuthProvider with ChangeNotifier {
         _user = UserModel.fromJson(userData);
         
         print("User logged in successfully!");
+        print("User ID: $_userId");
+        print("User Type: $_userType");
+        print("Verify Account: $_verifyAccount");
+        print("User model: ${_user?.toJson()}");
+        
+        notifyListeners(); // إشعار الواجهة بالتحديث
+      }
+      
+      _setLoading(false);
+      return true; 
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // دالة تسجيل الدخول للمعلنين مع كلمة المرور
+  Future<bool> loginWithPassword({required String phone, required String password}) async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      print("Starting advertiser login with phone: $phone");
+      final response = await _authRepository.loginWithPassword(phone: phone, password: password);
+      print("Advertiser login response received: $response");
+      
+      // استخراج البيانات من الاستجابة
+      final userData = response['user'];
+      final token = response['token']; // استخراج التوكن
+      
+      if (userData != null && token != null) {
+        _userId = userData['id'];
+        _userType = userData['user_type'];
+        _verifyAccount = true; // المعلنون يكونون محققين بعد تسجيل الدخول بكلمة المرور
+        
+        print("Extracted advertiser data - ID: $_userId, Type: $_userType, Token: ${token.substring(0, 20)}...");
+        
+        // حفظ البيانات في secure storage بما في ذلك التوكن
+        await _storage.write(key: 'user_id', value: _userId.toString());
+        await _storage.write(key: 'user_type', value: _userType!);
+        await _storage.write(key: 'user_phone', value: phone);
+        await _storage.write(key: 'verify_account', value: 'true');
+        await _storage.write(key: 'auth_token', value: token); // حفظ التوكن
+        
+        // حفظ موقع المعلن القادم من الـ API إن توفر
+        if (userData['advertiser_location'] != null && (userData['advertiser_location'] as String).trim().isNotEmpty) {
+          await _storage.write(key: 'user_address', value: (userData['advertiser_location'] as String).trim());
+        }
+        if (userData['latitude'] != null) {
+          await _storage.write(key: 'user_latitude', value: userData['latitude'].toString());
+        }
+        if (userData['longitude'] != null) {
+          await _storage.write(key: 'user_longitude', value: userData['longitude'].toString());
+        }
+        
+        print("Advertiser data saved to secure storage including token");
+        
+        // إنشاء UserModel من البيانات المستلمة
+        _user = UserModel.fromJson(userData);
+        
+        print("Advertiser logged in successfully!");
         print("User ID: $_userId");
         print("User Type: $_userType");
         print("Verify Account: $_verifyAccount");
@@ -382,149 +443,152 @@ class AuthProvider with ChangeNotifier {
   }
 
   // دالة لتحديث حالة verify_account
-  Future<void> setVerifyAccount(bool value) async {
-    _verifyAccount = value;
-    await _storage.write(key: 'verify_account', value: value.toString());
-    notifyListeners();
-  }
+  // Future<void> setVerifyAccount(bool value) async {
+  //   _verifyAccount = value;
+  //   await _storage.write(key: 'verify_account', value: value.toString());
+  //   notifyListeners();
+  // }
 
-  // Convert user to advertiser
-  Future<bool> convertToAdvertiser() async {
-    try {
-      print('🔄 convertToAdvertiser: Starting conversion process...');
-      _setLoading(true);
-      _setError(null);
+  // // Convert user to advertiser
+  // Future<bool> convertToAdvertiser() async {
+  //   try {
+  //     print('🔄 convertToAdvertiser: Starting conversion process...');
+  //     _setLoading(true);
+  //     _setError(null);
 
-      // Get current user ID
-      if (_user == null) {
-        print('❌ convertToAdvertiser: No user data available');
-        throw Exception('User data not available');
-      }
+  //     // Get current user ID
+  //     if (_user == null) {
+  //       print('❌ convertToAdvertiser: No user data available');
+  //       throw Exception('User data not available');
+  //     }
       
-      final userId = _user!.id;
-      print('👤 convertToAdvertiser: User ID = $userId');
+  //     final userId = _user!.id;
+  //     print('👤 convertToAdvertiser: User ID = $userId');
       
-      final endpoint = '/api/convert-to-advertiser/$userId';
-      print('🌐 convertToAdvertiser: Making POST request to: $endpoint');
+  //     final endpoint = '/api/convert-to-advertiser/$userId';
+  //     print('🌐 convertToAdvertiser: Making POST request to: $endpoint');
 
-      final response = await _apiService.post(
-        endpoint,
-        data: {},
-      );
+  //     final response = await _apiService.post(
+  //       endpoint,
+  //       data: {},
+  //     );
 
-      print('✅ convertToAdvertiser: API call successful');
-      print('📄 convertToAdvertiser: Response = $response');
+  //     print('✅ convertToAdvertiser: API call successful');
+  //     print('📄 convertToAdvertiser: Response = $response');
       
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      print('❌ convertToAdvertiser: Error occurred = $e');
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
-    }
-  }
+  //     _setLoading(false);
+  //     return true;
+  //   } catch (e) {
+  //     print('❌ convertToAdvertiser: Error occurred = $e');
+  //     _setError(e.toString());
+  //     _setLoading(false);
+  //     return false;
+  //   }
+  // }
 
-  // Verify OTP
-  Future<bool> verifyOTP(String phoneNumber, String otpCode) async {
-    try {
-      _setLoading(true);
-      _setError(null);
+  // // Verify OTP
+  // Future<bool> verifyOTP(String phoneNumber, String otpCode) async {
+  //   try {
+  //     _setLoading(true);
+  //     _setError(null);
 
-      final response = await _apiService.put('/api/verify', data: {
-        'phone': phoneNumber,
-        'otp': otpCode,
-      });
+  //     final response = await _apiService.put('/api/verify', data: {
+  //       'phone': phoneNumber,
+  //       'otp': otpCode,
+  //     });
 
-      if (response['access_token'] != null) {
-        // حفظ التوكن
-        await _storage.write(key: 'auth_token', value: response['access_token']);
+  //     if (response['access_token'] != null) {
+  //       // حفظ التوكن
+  //       await _storage.write(key: 'auth_token', value: response['access_token']);
 
-        // استخراج بيانات المستخدم من الاستجابة (داخل المفتاح 'user')
-        final Map<String, dynamic>? userData =
-            response['user'] is Map<String, dynamic> ? response['user'] as Map<String, dynamic> : null;
+  //       // استخراج بيانات المستخدم من الاستجابة (داخل المفتاح 'user')
+  //       final Map<String, dynamic>? userData =
+  //           response['user'] is Map<String, dynamic> ? response['user'] as Map<String, dynamic> : null;
 
-        // قراءة القيم بأمان
-        final int? idFromResponse = userData != null
-            ? (userData['id'] is int
-                ? userData['id'] as int
-                : int.tryParse(userData['id']?.toString() ?? ''))
-            : null;
-        final String userTypeFromResponse = (userData?['user_type'] ?? userData?['role'] ?? '')
-            .toString();
+  //       // قراءة القيم بأمان
+  //       final int? idFromResponse = userData != null
+  //           ? (userData['id'] is int
+  //               ? userData['id'] as int
+  //               : int.tryParse(userData['id']?.toString() ?? ''))
+  //           : null;
+  //       final String userTypeFromResponse = (userData?['user_type'] ?? userData?['role'] ?? '')
+  //           .toString();
 
-        // كتابة القيم في التخزين الآمن
-        await _storage.write(key: 'user_id', value: (idFromResponse?.toString() ?? ''));
-        await _storage.write(key: 'user_type', value: userTypeFromResponse);
-        await _storage.write(key: 'user_phone', value: phoneNumber); // حفظ رقم الهاتف المستخدم في التحقق
-        await _storage.write(key: 'verify_account', value: 'true'); // تحديث حالة التحقق
+  //       // كتابة القيم في التخزين الآمن
+  //       await _storage.write(key: 'user_id', value: (idFromResponse?.toString() ?? ''));
+  //       await _storage.write(key: 'user_type', value: userTypeFromResponse);
+  //       await _storage.write(key: 'user_phone', value: phoneNumber); // حفظ رقم الهاتف المستخدم في التحقق
+  //       await _storage.write(key: 'verify_account', value: 'true'); // تحديث حالة التحقق
 
-        // تحديث حالة AuthProvider مباشرة
-        _userId = idFromResponse;
-        _userType = userTypeFromResponse;
-        _verifyAccount = true;
+  //       // تحديث حالة AuthProvider مباشرة
+  //       _userId = idFromResponse;
+  //       _userType = userTypeFromResponse;
+  //       _verifyAccount = true;
 
-        // إنشاء UserModel محدث بدون فرض ! على قيم قد تكون فارغة
-        _user = UserModel(
-          id: _userId ?? 0,
-          username: (userData?['username'] ?? '').toString(),
-          email: (userData?['email'] ?? '').toString(),
-          phone: (userData?['phone'] ?? phoneNumber).toString(),
-          whatsapp: (userData?['whatsapp'] ?? '').toString(),
-          role: (userData?['role'] ?? _userType ?? '').toString(),
-          userType: (_userType ?? '').toString(),
-        );
+  //       // إنشاء UserModel محدث بدون فرض ! على قيم قد تكون فارغة
+  //       _user = UserModel(
+  //         id: _userId ?? 0,
+  //         username: (userData?['username'] ?? '').toString(),
+  //         email: (userData?['email'] ?? '').toString(),
+  //         phone: (userData?['phone'] ?? phoneNumber).toString(),
+  //         whatsapp: (userData?['whatsapp'] ?? '').toString(),
+  //         role: (userData?['role'] ?? _userType ?? '').toString(),
+  //         userType: (_userType ?? '').toString(),
+  //       );
 
-        print("OTP verified successfully - User ID: $_userId, User Type: $_userType, Phone: $phoneNumber");
-        print("Updated user model: ${_user?.toJson()}");
-        notifyListeners(); // إشعار الواجهة بالتحديث
-      }
+  //       print("OTP verified successfully - User ID: $_userId, User Type: $_userType, Phone: $phoneNumber");
+  //       print("Updated user model: ${_user?.toJson()}");
+  //       notifyListeners(); // إشعار الواجهة بالتحديث
+  //     }
 
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
-    }
-  }
+  //     _setLoading(false);
+  //     return true;
+  //   } catch (e) {
+  //     _setError(e.toString());
+  //     _setLoading(false);
+  //     return false;
+  //   }
+  // }
 
-  /// دالة إعادة إرسال OTP باستخدام endpoint منفصل
-  Future<bool> resendOTP(String phoneNumber) async {
-    try {
-      _setLoading(true);
-      _setError(null);
+  // /// دالة إعادة إرسال OTP باستخدام endpoint منفصل
+  // Future<bool> resendOTP(String phoneNumber) async {
+  //   try {
+  //     _setLoading(true);
+  //     _setError(null);
 
-      print("🔄 resendOTP: Starting resend OTP for phone: $phoneNumber");
+  //     print("🔄 resendOTP: Starting resend OTP for phone: $phoneNumber");
 
-      // استدعاء API لإعادة إرسال OTP
-      final response = await _apiService.post(
-        '/api/resend-otp',
-        data: {
-          'phone': phoneNumber,
-        },
-      );
+  //     // استدعاء API لإعادة إرسال OTP
+  //     final response = await _apiService.post(
+  //       '/api/resend-otp',
+  //       data: {
+  //         'phone': phoneNumber,
+  //       },
+  //     );
 
-      print("✅ resendOTP: API call successful");
-      print("📄 resendOTP: Response = $response");
+  //     print("✅ resendOTP: API call successful");
+  //     print("📄 resendOTP: Response = $response");
 
-      // التحقق من نجاح العملية بناءً على وجود الاستجابة
-      if (response != null) {
-        print("✅ resendOTP: OTP resent successfully for phone: $phoneNumber");
-        _setLoading(false);
-        return true;
-      } else {
-        final errorMessage = 'فشل في إعادة إرسال الرمز';
-        print("❌ resendOTP: Failed - $errorMessage");
-        _setError(errorMessage);
-        _setLoading(false);
-        return false;
-      }
-    } catch (e) {
-      print("❌ resendOTP: Error occurred = $e");
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
-    }
-  }
+  //     // التحقق من نجاح العملية بناءً على وجود الاستجابة
+  //     if (response != null) {
+  //       print("✅ resendOTP: OTP resent successfully for phone: $phoneNumber");
+  //       _setLoading(false);
+  //       return true;
+  //     } else {
+  //       final errorMessage = 'فشل في إعادة إرسال الرمز';
+  //       print("❌ resendOTP: Failed - $errorMessage");
+  //       _setError(errorMessage);
+  //       _setLoading(false);
+  //       return false;
+  //     }
+  //   } catch (e) {
+  //     print("❌ resendOTP: Error occurred = $e");
+  //     _setError(e.toString());
+  //     _setLoading(false);
+  //     return false;
+  //   }
+  // }
+
+
+
 }

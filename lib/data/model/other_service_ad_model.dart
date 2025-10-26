@@ -28,6 +28,7 @@ class OtherServiceAdModel implements FavoriteItemInterface {
   final String? planType;
   final String? createdAt;
   final String? addres;
+  final String? _addCategory; // Dynamic category from API
 
   // Implemented from FavoriteItemInterface
   @override
@@ -36,6 +37,11 @@ class OtherServiceAdModel implements FavoriteItemInterface {
   String get Title => serviceName ?? 'N/A';
   @override
   String get details => serviceName ?? 'N/A';
+  @override
+  String get category => 'Other Services'; // Category for other services
+  
+  @override
+  String get addCategory => _addCategory ?? 'other_services'; // API expects lowercase with underscores
   @override
   String get imageUrl => ImageUrlHelper.getMainImageUrl(mainImage ?? '');
   @override
@@ -79,7 +85,8 @@ class OtherServiceAdModel implements FavoriteItemInterface {
     required this.thumbnailImages,
     this.planType,
     this.createdAt,
-  });
+    String? addCategory,
+  }) : _addCategory = addCategory;
 
   factory OtherServiceAdModel.fromJson(Map<String, dynamic> json) {
     // Handling thumbnails which might not exist
@@ -117,6 +124,7 @@ class OtherServiceAdModel implements FavoriteItemInterface {
       thumbnailImages: thumbs,
       planType: json['plan_type'],
       createdAt: json['created_at'],
+      addCategory: json['add_category']?.toString(),
     );
   }
 }

@@ -27,6 +27,26 @@ class AuthRepository {
     }
   }
 
+  // دالة تسجيل الدخول للمعلنين مع كلمة المرور
+  Future<Map<String, dynamic>> loginWithPassword({
+    required String phone,
+    required String password,
+  }) async {
+    final Map<String, dynamic> loginData = {
+      'phone': phone,
+      'password': password,
+    };
+    
+    // استخدام نفس الـ endpoint مع إرسال كلمة المرور
+    final response = await _apiService.post('/api/newSignin', data: loginData);
+
+    if (response is Map<String, dynamic> && response.containsKey('user') && response.containsKey('token')) {
+      return response;
+    } else {
+      throw Exception('Advertiser login response is not valid or token is missing.');
+    }
+  }
+
   
   
   // 4. دالة إنشاء حساب جديد - تم إزالتها لأنها لم تعد مطلوبة في النظام الجديد
@@ -229,26 +249,26 @@ class AuthRepository {
   }
 
   // دالة تحويل المستخدم إلى معلن - POST /api/convert-to-advertiser/{user_id}
-  Future<void> convertToAdvertiser({required int userId}) async {
-    await _apiService.post('/api/convert-to-advertiser/$userId', data: {});
-  }
+  // Future<void> convertToAdvertiser({required int userId}) async {
+  //   await _apiService.post('/api/convert-to-advertiser/$userId', data: {});
+  // }
 
-  // دالة التحقق من OTP - PUT /api/verify
-  Future<Map<String, dynamic>> verifyOTP({
-    required String phone,
-    required String otp,
-  }) async {
-    final Map<String, dynamic> data = {
-      'phone': phone,
-      'otp': otp,
-    };
+  // // دالة التحقق من OTP - PUT /api/verify
+  // Future<Map<String, dynamic>> verifyOTP({
+  //   required String phone,
+  //   required String otp,
+  // }) async {
+  //   final Map<String, dynamic> data = {
+  //     'phone': phone,
+  //     'otp': otp,
+  //   };
     
-    final response = await _apiService.put('/api/verify', data: data);
+  //   final response = await _apiService.put('/api/verify', data: data);
     
-    if (response is Map<String, dynamic>) {
-      return response;
-    }
-    throw Exception('Failed to verify OTP.');
-  }
+  //   if (response is Map<String, dynamic>) {
+  //     return response;
+  //   }
+  //   throw Exception('Failed to verify OTP.');
+  // }
 
 }

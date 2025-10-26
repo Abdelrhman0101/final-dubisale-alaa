@@ -13,6 +13,7 @@ class BestElectronicsAd {
   final List<String> thumbnailImagesUrls;
   final String status;
   final String category;
+  
 
   BestElectronicsAd({
     required this.id,
@@ -63,8 +64,9 @@ class BestElectronicsAdvertiser {
   });
 
   factory BestElectronicsAdvertiser.fromJson(Map<String, dynamic> json) {
+    // استخدام user_id بدلاً من id للحصول على معرف المعلن الصحيح
     return BestElectronicsAdvertiser(
-      id: json['id'] ?? 0,
+      id: json['user_id'] ?? 0,
       advertiserName: json['advertiser_name'] ?? '',
       category: json['category'] ?? '',
       latestAds: json['latest_ads'] != null

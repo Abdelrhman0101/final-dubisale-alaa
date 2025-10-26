@@ -12,7 +12,7 @@ import 'package:advertising_app/data/model/other_service_model.dart';
 import 'package:advertising_app/data/model/real_estate_model.dart';
 import 'package:advertising_app/data/model/restaurant_model.dart';
 import 'package:advertising_app/presentation/screen/all_add_car_rent.dart';
-import 'package:advertising_app/presentation/screen/all_add_car_sales.dart';
+import 'package:advertising_app/presentation/screen/all_add_screen.dart';
 import 'package:advertising_app/presentation/screen/all_add_car_service.dart';
 import 'package:advertising_app/presentation/screen/all_add_electronic.dart';
 import 'package:advertising_app/presentation/screen/all_add_job.dart';
@@ -151,14 +151,14 @@ GoRouter createRouter({
       // GoRoute(path: '/emailsignup', builder: (context, state) => EmailSignUpScreen(notifier: notifier)),
       // GoRoute(path: '/passphonelogin', builder: (context, state) => ForgotPassPhone(notifier: notifier)),
       GoRoute(path: '/forgetpassemail', builder: (context, state) => ForgotPassEmail(notifier: notifier)),
-      GoRoute(path: '/phonecode', builder: (context, state) => VerifyPhoneCode(notifier: notifier)),
+      //GoRoute(path: '/phonecode', builder: (context, state) => VerifyPhoneCode(notifier: notifier)),
       GoRoute(path: '/emailcode', builder: (context, state) => VerifyEmailCode(notifier: notifier)),
       GoRoute(path: '/resetpass', builder: (context, state) => ResetPassword(notifier: notifier)),
       GoRoute(path: '/setting', builder: (context, state) => SettingScreen(notifier: notifier)),
 
       // +++ الشاشات التي لا تحتاج إلى تغيير اللغة +++
       GoRoute(path: '/home', builder: (context, state) => HomeScreen()),
-     // GoRoute(path: '/favorite', builder: (context, state) => FavoriteScreen()),
+      GoRoute(path: '/favorite', builder: (context, state) => FavoriteScreen()),
       GoRoute(path: '/postad', builder: (context, state) => PostAdScreen()),
      GoRoute(path: '/profile', builder: (context, state) => ProfileScreen()),
       GoRoute(path: '/editprofile', builder: (context, state) => EditProfile()),
@@ -291,7 +291,16 @@ GoRouter createRouter({
          final adData = state.extra as Map<String, dynamic>;
          return PlanSelectionScreen(adData: adData);
        }),
-       GoRoute(path: '/all_ad_car_sales', builder: (context, state) => AllAdCarSales()),
+       GoRoute(
+         path: '/all_ad_car_sales/:advertiserId',
+         builder: (context, state) {
+           final advertiserId = state.pathParameters['advertiserId'];
+           debugPrint('Router passing advertiser ID: $advertiserId');
+           return AllAddScreen(advertiserId: advertiserId);
+         },
+       ),
+       // للتوافق مع الاستدعاءات القديمة
+       GoRoute(path: '/all_ad_car_sales', builder: (context, state) => AllAddScreen()),
        GoRoute(path: '/all_ad_car_rent', builder: (context, state) =>  AllAdCarRent()),
        GoRoute(path: '/AllAdsRealEstate', builder: (context, state) =>  AllAdsRealEstate()),
        GoRoute(path: '/AllAddsElectronic', builder: (context, state) =>   AllAddsElectronic()),
@@ -374,16 +383,28 @@ GoRouter createRouter({
         builder: (context, state) => RealEstateAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
       ),
        GoRoute(
-        path: '/real_estate_save_ads',
-        builder: (context, state) => RealEstateSaveAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
+        path: '/real_estate_save_ads/:adId',
+        builder: (context, state) {
+          final adId = state.pathParameters['adId'] ?? '0';
+          return RealEstateSaveAdScreen(
+            onLanguageChange: (locale) => changeLocale(context, locale),
+            adId: adId,
+          );
+        },
       ),
        GoRoute(
         path: '/electronics_ads',
         builder: (context, state) => ElectronicsAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
       ),
        GoRoute(
-        path: '/electronics_save_ads',
-        builder: (context, state) => ElectronicsSaveAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
+        path: '/electronics_save_ads/:adId',
+        builder: (context, state) {
+          final adId = int.parse(state.pathParameters['adId']!);
+          return ElectronicsSaveAdScreen(
+            onLanguageChange: (locale) => changeLocale(context, locale),
+            adId: adId,
+          );
+        },
       ),
       GoRoute(
         path: '/car_rent_ads',
@@ -398,8 +419,8 @@ GoRouter createRouter({
         builder: (context, state) => RestaurantsAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
       ),
        GoRoute(
-        path: '/resturant_save_ads',
-        builder: (context, state) => RestaurantsSaveAdScreen(onLanguageChange: (locale) => changeLocale(context, locale)),
+        path: '/resturant_save_ads/:adId',
+        builder: (context, state) => RestaurantsSaveAdScreen(adId: state.pathParameters['adId'] ?? '0'),
       ),
        GoRoute(
         path: '/other_servics_ads',

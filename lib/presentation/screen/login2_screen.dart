@@ -23,11 +23,38 @@ class Login2 extends StatefulWidget {
 
 class _Login2State extends State<Login2> {
   final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController(); // إضافة controller لكلمة المرور
   String _fullPhoneNumber = '';
+  bool _isPasswordVisible = false; // للتحكم في إظهار/إخفاء كلمة المرور
+  bool _showPasswordField = false; // للتحكم في إظهار حقل كلمة المرور
+
+  @override
+  void initState() {
+    super.initState();
+    // إضافة listener لمراقبة تغيير رقم الهاتف
+    _phoneController.addListener(_onPhoneNumberChanged);
+  }
+
+  // دالة لمراقبة تغيير رقم الهاتف وتحديد نوع المستخدم
+  void _onPhoneNumberChanged() {
+    setState(() {
+      _showPasswordField = _isAdvertiserPhone(_fullPhoneNumber);
+    });
+  }
+
+  // دالة للتحقق من أن رقم الهاتف خاص بمعلن (Terminal#937-937)
+  bool _isAdvertiserPhone(String phoneNumber) {
+    // إزالة المسافات والرموز الإضافية
+    String cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // التحقق من أن الرقم ينتهي بـ 937-937 (أو يحتوي على هذا النمط)
+    return cleanPhone.contains('937937') || cleanPhone.endsWith('937937');
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _passwordController.dispose(); // تنظيف controller كلمة المرور
     super.dispose();
   }
 
@@ -43,24 +70,125 @@ class _Login2State extends State<Login2> {
       return;
     }
 
+    // التحقق من كلمة المرور للمعلنين
+    if (_showPasswordField && _passwordController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى إدخال كلمة المرور'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
-    final success = await authProvider.login(phone: _fullPhoneNumber);
-    
-    if (success) {
-      if (!mounted) return;
-      final String userType = (authProvider.userType ?? authProvider.user?.userType ?? '').toLowerCase();
-      if (userType == 'advertiser') {
-        context.push('/phonecode');
+    try {
+      bool success = false;
+      
+      // إرسال البيانات حسب نوع المستخدم
+      if (_showPasswordField) {
+        print('=== LOGIN WITH PASSWORD ===');
+        // إذا كان حقل كلمة المرور ظاهر، استخدم loginWithPassword
+        success = await authProvider.loginWithPassword(
+          phone: _fullPhoneNumber, 
+          password: _passwordController.text.trim()
+        );
+        print('Login with password result: $success');
+        print('Auth provider error: ${authProvider.errorMessage}');
       } else {
-        context.go('/');
+        print('=== REGULAR LOGIN ATTEMPT ===');
+        // محاولة تسجيل الدخول العادي أولاً
+        success = await authProvider.login(phone: _fullPhoneNumber);
+        print('Regular login result: $success');
+        print('Auth provider error: ${authProvider.errorMessage}');
+        
+        // إذا فشل تسجيل الدخول العادي، تحقق من سبب الفشل
+        if (!success && authProvider.errorMessage != null) {
+          print('=== CHECKING ERROR MESSAGE ===');
+          print('Error message: "${authProvider.errorMessage}"');
+          
+          // تحقق من أن الخطأ يتعلق بطلب كلمة المرور
+          final errorMsg = authProvider.errorMessage!.toLowerCase();
+          print('Error message (lowercase): "$errorMsg"');
+          
+          // فحص محسن للأخطاء - البحث عن رسائل كلمة المرور في النص الكامل
+          bool isPasswordRequired = false;
+          
+          // فحص الرسالة الأصلية للبحث عن أخطاء التحقق
+          if (errorMsg.contains('validation_error:')) {
+            // استخراج البيانات من رسالة الخطأ
+            final errorData = authProvider.errorMessage!.substring(authProvider.errorMessage!.indexOf('validation_error:') + 17);
+            print('Validation error data: $errorData');
+            isPasswordRequired = errorData.contains('password') && errorData.contains('required');
+          } else {
+            // الفحص التقليدي
+            isPasswordRequired = errorMsg.contains('password') || 
+                errorMsg.contains('required') ||
+                errorMsg.contains('the password field is required') ||
+                errorMsg.contains('كلمة المرور') ||
+                errorMsg.contains('مطلوب');
+          }
+              
+          print('Is password required: $isPasswordRequired');
+          
+          if (isPasswordRequired) {
+            print('=== SHOWING PASSWORD FIELD ===');
+            // إظهار حقل كلمة المرور تلقائياً
+            setState(() {
+              _showPasswordField = true;
+            });
+            
+            // عرض رسالة توضيحية للمستخدم
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('يرجى إدخال كلمة المرور لإكمال تسجيل الدخول'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return; // الخروج من الدالة لإعطاء المستخدم فرصة لإدخال كلمة المرور
+          }
+        }
       }
-    } else {
-      // عرض رسالة خطأ
+      
+      if (success) {
+        print('=== LOGIN SUCCESS ===');
+        if (!mounted) return;
+        final String userType = (authProvider.userType ?? authProvider.user?.userType ?? '').toLowerCase();
+        print('User type: $userType');
+        if (userType == 'advertiser') {
+          context.push('/home');
+        } else {
+          context.go('/');
+        }
+      } else {
+        print('=== LOGIN FAILED ===');
+        // عرض رسالة خطأ عامة فقط إذا لم تكن متعلقة بكلمة المرور
+        if (mounted && authProvider.errorMessage != null) {
+          final errorMsg = authProvider.errorMessage!.toLowerCase();
+          bool isPasswordError = errorMsg.contains('password') ||
+              errorMsg.contains('required') ||
+              errorMsg.contains('كلمة المرور') ||
+              errorMsg.contains('مطلوب');
+              
+          if (!isPasswordError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(authProvider.errorMessage ?? 'حدث خطأ في تسجيل الدخول'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('=== EXCEPTION CAUGHT ===');
+      print('Exception: $e');
+      // التعامل مع الأخطاء غير المتوقعة
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(authProvider.errorMessage ?? 'حدث خطأ في تسجيل الدخول'),
+            content: Text('حدث خطأ غير متوقع: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -132,14 +260,92 @@ class _Login2State extends State<Login2> {
               controller: _phoneController,
               onPhoneNumberChanged: (fullNumber) {
                 _fullPhoneNumber = fullNumber;
+                // تحديث حالة إظهار حقل كلمة المرور عند تغيير الرقم
+                setState(() {
+                  _showPasswordField = _isAdvertiserPhone(fullNumber);
+                });
               },
             ),
             
-            SizedBox(height:8.h),
+            SizedBox(height: 8.h),
             
-            // ---------------------------------------------------
-            // تم حذف حقل كلمة المرور واستبدال الـ Checkbox بجملة عادية
-            // ---------------------------------------------------
+            // إضافة حقل كلمة المرور للمعلنين فقط
+            if (_showPasswordField) ...[
+              Text(
+                S.of(context).password,
+                style: TextStyle(
+                  color: KTextColor,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16.sp,
+                ),
+              ),
+              SizedBox(height: 3.h),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: !_isPasswordVisible,
+                style: TextStyle(
+                  color: KTextColor,
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.w500
+                ),
+                decoration: InputDecoration(
+                  hintText: "Enter your password",
+                  hintStyle: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 14.sp,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.r),
+                    borderSide: const BorderSide(color: Color.fromRGBO(8, 194, 201, 1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.r),
+                    borderSide: const BorderSide(color: Color.fromRGBO(8, 194, 201, 1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.r),
+                    borderSide: const BorderSide(color: Color.fromRGBO(8, 194, 201, 1)),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(height: 8.h),
+              
+              // جملة Forgot Password
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: () {
+                    // TODO: إضافة منطق نسيان كلمة المرور
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('ميزة استعادة كلمة المرور ستكون متاحة قريباً'),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    S.of(context).forgotPassword,
+                    style: TextStyle(
+                      color: KTextColor,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w500,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 8.h),
+            ],
             
             SizedBox(height: 5.h),
             

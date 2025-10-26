@@ -623,6 +623,11 @@ class AdCardItemAdapter implements FavoriteItemInterface {
   @override
   String get details => _ad.title;
   @override
+  String get category => 'Cars Sales'; // Category for car sales
+  
+  @override
+  String get addCategory => _ad.addCategory ?? 'Cars Sales'; // Use dynamic category from API or fallback
+  @override
   String get imageUrl => ImageUrlHelper.getMainImageUrl(_ad.mainImage);
   @override
   List<String> get images => [

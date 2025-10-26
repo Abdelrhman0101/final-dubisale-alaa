@@ -20,6 +20,7 @@ class CarServiceModel {
   final List<String> thumbnailImages;
   final String? location;
   final String? createdAt; // سنضيفه للترتيب
+  final String? addCategory; // Dynamic category from API
 
   CarServiceModel({
     required this.id,
@@ -39,6 +40,7 @@ class CarServiceModel {
     required this.thumbnailImages,
     this.location,
     this.createdAt,
+    this.addCategory,
   });
 
   factory CarServiceModel.fromJson(Map<String, dynamic> json) {
@@ -82,6 +84,7 @@ class CarServiceModel {
       thumbnailImages: thumbs,
       location: json['location'],
       createdAt: json['created_at'],
+      addCategory: json['add_category']?.toString(),
     );
   }
 }

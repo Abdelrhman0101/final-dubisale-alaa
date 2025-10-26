@@ -15,6 +15,7 @@ class RestaurantModel implements FavoriteItemInterface {
   final bool isPremium;
   final List<String> _images;
   final AdPriority priority;
+  final String? _addCategory; // Dynamic category from API
 
 
   RestaurantModel({
@@ -28,14 +29,19 @@ class RestaurantModel implements FavoriteItemInterface {
     required this.isPremium,
     required List<String> images, 
     required this.priority,
-  }) : _images = images;
+    String? addCategory,
+  }) : _images = images, _addCategory = addCategory;
 
 
   @override
   String get line1 => "";
 
+  @override
+  String get category => 'restaurant'; // Category for restaurants
 
+  @override
+  String get addCategory => _addCategory ?? 'restaurant'; // Use dynamic category from API or fallback
 
-@override
+  @override
   List<String> get images => _images; 
 }

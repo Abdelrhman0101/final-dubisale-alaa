@@ -29,6 +29,7 @@ class CarRentAdModel {
   final String? interior_color;
   final String? seats_no;
   final String? description;
+  final String? addCategory;
 
   CarRentAdModel(
     this.carType,
@@ -37,7 +38,7 @@ class CarRentAdModel {
     this.color,
     this.interior_color,
     this.seats_no,
-    this.description, {
+    this.description, this.addCategory, {
     required this.id,
     required this.title,
     required this.price,
@@ -85,6 +86,7 @@ class CarRentAdModel {
         json['interior_color']?.toString(),
         json['seats_no']?.toString(),
         json['description']?.toString(),
+        json['add_category']?.toString(),
         id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
         price: json['price']?.toString() ?? '0',
         title: json['title']?.toString() ?? 'No Title',

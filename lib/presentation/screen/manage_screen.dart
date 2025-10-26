@@ -11,6 +11,7 @@ import 'package:advertising_app/constant/string.dart';
 import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/presentation/widget/custom_bottom_nav.dart';
+import 'package:advertising_app/core/scaffold_messenger_key.dart';
 
 class ManageScreen extends StatefulWidget {
   final Function(Locale) onLanguageChange;
@@ -277,10 +278,18 @@ class __AdCardWidgetState extends State<_AdCardWidget> {
                       height: 95.h,
                       child: GestureDetector(
                         onTap: () {
-                          if (ad.categorySlug == 'car-sales')
+                          final slug = (ad.categorySlug ?? '').toLowerCase();
+                          if (slug == 'car-sales' || slug == 'car_sales') {
                             context.push('/car-details/${ad.id}');
-                          else if (ad.categorySlug == 'car-rent')
+                          } else if (slug == 'car-rent' || slug == 'car_rent') {
                             context.push('/car-rent-details/${ad.id}');
+                          } else if (slug == 'Jop' || slug == 'job') {
+                            context.push('/job-details/${ad.id}');
+                          } else if (slug == 'Electronics' || slug == 'electronic') {
+                            context.push('/electronic-details/${ad.id}');
+                          } else if (slug == 'Other Services' || slug == 'other-services') {
+                            context.push('/other_service-details/${ad.id}');
+                          }
                         },
                         child: Stack(
                           children: [
@@ -451,7 +460,19 @@ class __AdCardWidgetState extends State<_AdCardWidget> {
                                 SizedBox(
                                   width: 15.w,
                                   child: IconButton(
-                                    onPressed: () {}, 
+                                    onPressed: () async {
+                                       final messenger = rootScaffoldMessengerKey.currentState;
+                                       final provider = context.read<MyAdsProvider>();
+                                       final success = await provider.deleteAd(ad: ad);
+                                       messenger?.hideCurrentSnackBar();
+                                       messenger?.showSnackBar(
+                                        SnackBar(
+                                          content: Text(success ? 'تم حذف الإعلان' : 'فشل حذف الإعلان'),
+                                          backgroundColor: success ? Colors.green : Colors.red,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }, 
                                     icon: SvgPicture.asset('assets/icons/deleted.svg', 
                                         width: 20.w, height: 22.h),
                                     padding: EdgeInsets.zero,
@@ -562,17 +583,19 @@ class __AdCardWidgetState extends State<_AdCardWidget> {
   String _getAdTitle(MyAdModel ad) {
     switch (ad.category) {
       case 'Cars Sales':
-        // للسيارات: استخدم Make Model Trim Year
         List<String> carParts = [];
         if (ad.title != null && ad.title!.isNotEmpty) carParts.add(ad.title!);
         return carParts.isNotEmpty ? carParts.join(' ') : ad.title;
       case 'Car Rent':
-        // لتأجير السيارات: استخدم Make Model Year
         List<String> rentParts = [];
         if (ad.make != null && ad.make!.isNotEmpty) rentParts.add(ad.make!);
         if (ad.model != null && ad.model!.isNotEmpty) rentParts.add(ad.model!);
         if (ad.year != null && ad.year!.isNotEmpty) rentParts.add(ad.year!);
         return rentParts.isNotEmpty ? rentParts.join(' ') : ad.title;
+      case 'Jobs':
+      case 'Electronics':
+      case 'Other Services':
+        return ad.title;
       default:
         return ad.title;
     }
@@ -584,7 +607,36 @@ class __AdCardWidgetState extends State<_AdCardWidget> {
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 2.w),
         child: ElevatedButton(
-          onPressed: () => setState(() => _selectedAction = text),
+          onPressed: () {
+            if (text == s.edit) {
+              final slug = (ad.categorySlug).toLowerCase();
+              final category = (ad.category).toLowerCase();
+
+              if ((slug.contains('car') && (slug.contains('sale') || slug.contains('sales'))) || category.contains('cars sales')) {
+                context.push('/car_sales_save_ads/${ad.id}');
+              } else if (slug.contains('real') || slug.contains('estate') || category.contains('real estate') || category.contains('real state')) {
+                context.push('/real_estate_save_ads');
+              } else if ((slug.contains('car') && slug.contains('rent')) || category.contains('car rent')) {
+                context.push('/car_rent_save_ads');
+              } else if ((slug.contains('car') && (slug.contains('service') || slug.contains('services'))) || category.contains('car services')) {
+                context.push('/car_services_save_ads');
+              } else if (slug.contains('restaurant') || category.contains('restaurant')) {
+                context.push('/resturant_save_ads/${ad.id}');
+              } else if (slug.contains('job') || category == 'jobs' || category == 'jop') {
+                context.push('/job_save_ads');
+              } else if (slug.contains('electronic') || category.contains('electronics')) {
+                context.push('/electronics_save_ads/${ad.id}');
+              } else if ((slug.contains('other') && slug.contains('service')) || category.contains('other services')) {
+                context.push('/other_service_save_ads');
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Unknown category for edit')),
+                );
+              }
+            } else {
+              setState(() => _selectedAction = text);
+            }
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: isSelected ? primaryColor : Colors.transparent,
             shadowColor: Colors.transparent,

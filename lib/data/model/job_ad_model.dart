@@ -26,12 +26,18 @@ class JobAdModel implements FavoriteItemInterface {
   final String? phoneNumber;
   final String? whatsappNumber;
   final String? job_name;
+  final String? _addCategory; // Dynamic category from API
 
   // Implemented from FavoriteItemInterface
   @override
   String get contact => advertiserName;
   @override
   String get details =>  "${categoryType ?? 'N/A'} ${sectionType ?? 'N/A'} "; // Job Category Type
+  @override
+  String get category => 'Jop'; // Category for jobs
+  
+  @override
+  String get addCategory => _addCategory ?? 'jobs'; // Use dynamic category from API or fallback
   @override
   String get imageUrl => ImageUrlHelper.getMainImageUrl(mainImage ?? '');
   @override
@@ -78,7 +84,8 @@ class JobAdModel implements FavoriteItemInterface {
     this.contactInfo,
     this.phoneNumber,
     this.whatsappNumber,
-  });
+    String? addCategory,
+  }) : _addCategory = addCategory;
 
   factory JobAdModel.fromJson(Map<String, dynamic> json) {
     List<String> thumbs = [];
@@ -114,6 +121,7 @@ class JobAdModel implements FavoriteItemInterface {
       contactInfo: json['contact_info'],
       phoneNumber: json['phone_number'],
       whatsappNumber: json['whatsapp_number'],
+      addCategory: json['add_category']?.toString(),
     );
   }
 }

@@ -17,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geocoding/geocoding.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -71,6 +72,27 @@ class _RealEstateAdScreenState extends State<RealEstateAdScreen> {
         await _checkUserProfileData(authProvider);
         
         context.read<RealEstateInfoProvider>().fetchAllData(token: authToken);
+
+        // محاولة تحويل العنوان النصي إلى إحداثيات وتحريك الخريطة إن لم تكن محددة
+        if (selectedLocation.isNotEmpty && selectedLatLng == null) {
+          try {
+            final results = await locationFromAddress(selectedLocation);
+            if (results.isNotEmpty) {
+              final first = results.first;
+              selectedLatLng = LatLng(first.latitude, first.longitude);
+              final mapsProvider = context.read<GoogleMapsProvider>();
+              await mapsProvider.moveCameraToLocation(first.latitude, first.longitude, zoom: 14.0);
+              mapsProvider.addMarker(
+                'selected_location',
+                LatLng(first.latitude, first.longitude),
+                title: 'الموقع المحدد',
+                snippet: selectedLocation,
+              );
+            }
+          } catch (e) {
+            debugPrint('Geocoding failed: $e');
+          }
+        }
       }
     });
   }
@@ -175,7 +197,7 @@ class _RealEstateAdScreenState extends State<RealEstateAdScreen> {
               ],
             ),
             actions: [
-              SizedBox(
+               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
@@ -201,6 +223,34 @@ class _RealEstateAdScreenState extends State<RealEstateAdScreen> {
                   ),
                 ),
               ),
+            
+             const SizedBox(height: 8),
+            SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            
+            
             ],
           ),
         );
@@ -872,8 +922,17 @@ class _RealEstateAdScreenState extends State<RealEstateAdScreen> {
                   right: 10,
                   child: Row(children: [
                     Expanded(
-                        child: ElevatedButton.icon(
-                            icon: _isLoadingLocation
+                        child: ElevatedButton(
+                            onPressed:
+                                _isLoadingLocation ? null : _getCurrentLocation,
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: _isLoadingLocation
+                                    ? Colors.grey
+                                    : KPrimaryColor,
+                                minimumSize: const Size(double.infinity, 43),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8))),
+                            child: _isLoadingLocation
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
@@ -882,38 +941,25 @@ class _RealEstateAdScreenState extends State<RealEstateAdScreen> {
                                         valueColor:
                                             AlwaysStoppedAnimation<Color>(
                                                 Colors.white)))
-                                : const Icon(Icons.my_location,
-                                    color: Colors.white, size: 20),
-                            label: const Text('Locate Me',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 14)),
-                            onPressed:
-                                _isLoadingLocation ? null : _getCurrentLocation,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: _isLoadingLocation
-                                    ? Colors.grey
-                                    : KPrimaryColor,
-                                minimumSize: const Size(0, 48),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8))))),
+                                : const Text('Locate Me',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 14)))),
                     const SizedBox(width: 10),
                     Expanded(
-                        child: ElevatedButton.icon(
-                            icon: const Icon(Icons.map_outlined,
-                                color: Colors.white, size: 20),
-                            label: const Text('Pick Location',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12)),
+                        child: ElevatedButton(
                             onPressed: _navigateToLocationPicker,
                             style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF01547E),
-                                minimumSize: const Size(0, 48),
+                                minimumSize: const Size(double.infinity, 43),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8))))),
+                                    borderRadius: BorderRadius.circular(8))),
+                            child: const Text('Pick Location',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13.5)))),
                   ])),
             ])));
   }

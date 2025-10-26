@@ -31,12 +31,15 @@ class ElectronicModel implements FavoriteItemInterface {
   @override
   String get line1 => "";
 
+  @override
+  String get category => 'Electronics'; // Category for electronics
 
+  @override
+  String get addCategory => 'Electronics'; // API expects lowercase
 
-@override
+  @override
   List<String> get images => _images;
   
   @override
-  // TODO: implement id
-  get id => throw UnimplementedError(); 
+  String get id => title.hashCode.toString(); 
 }

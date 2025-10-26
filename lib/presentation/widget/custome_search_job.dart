@@ -4,6 +4,7 @@ import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/data/model/ad_priority.dart';
 import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -40,7 +41,7 @@ class SearchCardJob extends StatefulWidget {
   State<SearchCardJob> createState() => _SearchCardJobState();
 }
 
-class _SearchCardJobState extends State<SearchCardJob> {
+class _SearchCardJobState extends State<SearchCardJob> with FavoritesHelper {
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -48,6 +49,7 @@ class _SearchCardJobState extends State<SearchCardJob> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when widget initializes
   }
 
   @override
@@ -323,36 +325,11 @@ class _SearchCardJobState extends State<SearchCardJob> {
   }
 
   Widget _buildTopRightIcon() {
-    if (widget.onAddToFavorite != null) {
-      return IconButton(icon: const Icon(Icons.favorite_border, color: Colors.grey), onPressed: _handleAddToFavorite);
-    } else if (widget.showDelete) {
-      return IconButton(icon: const Icon(Icons.favorite, color: Colors.red), onPressed: widget.onDelete);
-    } else {
-      return const SizedBox.shrink();
-    }
-  }
-
-  void _handleAddToFavorite() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(S.of(context).add_to_favorite, style: const TextStyle(color: KTextColor, fontSize: 16)),
-        content: Text(S.of(context).confirm_add_to_favorite, style: const TextStyle(color: KTextColor, fontSize: 18)),
-        actions: [
-          TextButton(
-            child: Text(S.of(context).cancel, style: const TextStyle(color: KTextColor, fontSize: 20)),
-            onPressed: () => Navigator.pop(context),
-          ),
-          TextButton(
-            child: Text(S.of(context).yes, style: const TextStyle(color: KTextColor, fontSize: 20)),
-            onPressed: () {
-              Navigator.pop(context);
-              widget.onAddToFavorite?.call();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(S.of(context).added_to_favorite)));
-            },
-          ),
-        ],
-      ),
+    return buildFavoriteIcon(
+      widget.item,
+      onAddToFavorite: widget.onAddToFavorite,
+      onRemoveFromFavorite: widget.showDelete ? widget.onDelete : null,
     );
   }
+
 }

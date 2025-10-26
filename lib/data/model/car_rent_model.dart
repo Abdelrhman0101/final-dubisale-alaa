@@ -53,9 +53,14 @@ class CarRentModel implements FavoriteItemInterface {
   String get line1 => "Day Rent $day_rent  Month Rent $month_rent";
 
   @override
+  String get category => 'Car Rent'; // Category for car rent
+
+  @override
+  String get addCategory => 'Car Rent'; // API expects lowercase with underscores
+
+  @override
   List<String> get images => _images;
   
   @override
-  // TODO: implement id
-  get id => throw UnimplementedError();
+  String get id => title.hashCode.toString();
 }

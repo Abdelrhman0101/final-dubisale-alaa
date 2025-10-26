@@ -159,6 +159,36 @@ class RestaurantsRepository {
     throw Exception('API response format is not as expected for RestaurantAdModel.');
   }
 
+  // دالة لتحديث إعلان مطعم موجود
+  Future<void> updateRestaurantAd({
+    required String token,
+    required int adId,
+    String? priceRange,
+    String? description,
+    String? phoneNumber,
+    String? whatsappNumber,
+    File? mainImage,
+    List<File>? thumbnailImages,
+  }) async {
+    final Map<String, dynamic> textData = {
+      '_method': 'PUT',
+    };
+    
+    // إضافة الحقول المحدثة فقط
+    if (priceRange != null) textData['price_range'] = priceRange;
+    if (description != null) textData['description'] = description;
+    if (phoneNumber != null) textData['phone_number'] = phoneNumber;
+    if (whatsappNumber != null) textData['whatsapp_number'] = whatsappNumber;
+    
+    await _apiService.postFormData(
+      '/api/restaurants/$adId',
+      data: textData,
+      mainImage: mainImage,
+      thumbnailImages: thumbnailImages ?? [],
+      token: token,
+    );
+  }
+
   // دالة لجلب أفضل المعلنين للمطاعم
   Future<List<BestAdvertiser>> getTopRestaurants({String? token, String? category}) async {
     // استخدام الـ category كجزء من الـ endpoint بدلاً من query parameter
@@ -175,36 +205,8 @@ class RestaurantsRepository {
       
       for (var json in response) {
         if (json is Map<String, dynamic>) {
-          // إنشاء BestAdvertiser من البيانات الجديدة
-          final advertiser = BestAdvertiser(
-            id: json['id'] ?? 0,
-            name: json['advertiser_name'] ?? 'Unknown Advertiser',
-            ads: [],
-          );
-          
-          // معالجة latest_ads
-          if (json['latest_ads'] is List) {
-            List<BestAdvertiserAd> ads = [];
-            String advertiserCategory = json['category']?.toString() ?? '';
-            
-            for (var adJson in json['latest_ads']) {
-              if (adJson is Map<String, dynamic>) {
-                // إضافة معلومات المعلن للإعلان
-                adJson['advertiser_id'] = advertiser.id;
-                adJson['advertiser_name'] = advertiser.name;
-                // إضافة فئة المعلن للإعلان
-                adJson['category'] = advertiserCategory;
-                
-                final ad = BestAdvertiserAd.fromJson(
-                  adJson, 
-                  advertiserId: advertiser.id, 
-                  advertiserName: advertiser.name
-                );
-                ads.add(ad);
-              }
-            }
-            advertiser.ads.addAll(ads);
-          }
+          // استخدام نموذج BestAdvertiser لضمان استخراج معرف المعلن بشكل صحيح
+          final advertiser = BestAdvertiser.fromJson(json);
           
           if (advertiser.ads.isNotEmpty) {
             advertisers.add(advertiser);
@@ -220,33 +222,8 @@ class RestaurantsRepository {
       
       for (var json in response['data']) {
         if (json is Map<String, dynamic>) {
-          final advertiser = BestAdvertiser(
-            id: json['id'] ?? 0,
-            name: json['advertiser_name'] ?? 'Unknown Advertiser',
-            ads: [],
-          );
-          
-          if (json['latest_ads'] is List) {
-            List<BestAdvertiserAd> ads = [];
-            String advertiserCategory = json['category']?.toString() ?? '';
-            
-            for (var adJson in json['latest_ads']) {
-              if (adJson is Map<String, dynamic>) {
-                adJson['advertiser_id'] = advertiser.id;
-                adJson['advertiser_name'] = advertiser.name;
-                // إضافة فئة المعلن للإعلان
-                adJson['category'] = advertiserCategory;
-                
-                final ad = BestAdvertiserAd.fromJson(
-                  adJson, 
-                  advertiserId: advertiser.id, 
-                  advertiserName: advertiser.name
-                );
-                ads.add(ad);
-              }
-            }
-            advertiser.ads.addAll(ads);
-          }
+          // استخدام نموذج BestAdvertiser لضمان استخراج معرف المعلن بشكل صحيح
+          final advertiser = BestAdvertiser.fromJson(json);
           
           if (advertiser.ads.isNotEmpty) {
             advertisers.add(advertiser);

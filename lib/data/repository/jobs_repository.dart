@@ -8,13 +8,64 @@ class JobsRepository {
   JobsRepository(this._apiService);
 
   Future<JobAdResponse> getJobAds({String? token, Map<String, dynamic>? query}) async {
-    final response = await _apiService.get('/api/jobs', query: query);
-    
-    if (response is Map<String, dynamic>) {
-      return JobAdResponse.fromJson(response);
+    try {
+      final response = await _apiService.get('/api/jobs', query: query);
+      
+      // Handle different response formats
+      if (response is Map<String, dynamic>) {
+        // Check if response has the expected structure with 'data' key
+        if (response.containsKey('data')) {
+          return JobAdResponse.fromJson(response);
+        }
+        
+        // Check if response has 'ads' key (alternative format)
+        if (response.containsKey('ads')) {
+          final transformedResponse = {
+            'data': response['ads'],
+            'total': response['total'] ?? response['count'] ?? 0,
+          };
+          return JobAdResponse.fromJson(transformedResponse);
+        }
+        
+        // Check if it's an error response
+        if (response.containsKey('error') || response.containsKey('message')) {
+          final errorMessage = response['error'] ?? response['message'] ?? 'Unknown API error';
+          throw Exception('API Error: $errorMessage');
+        }
+        
+        // If response is a map but doesn't have expected keys, throw error
+        throw Exception('Unexpected API response format: ${response.keys.join(', ')}');
+      }
+      
+      // Handle direct list response
+      if (response is List) {
+        final transformedResponse = {
+          'data': response,
+          'total': response.length,
+        };
+        return JobAdResponse.fromJson(transformedResponse);
+      }
+      
+      // Handle null or empty response
+      if (response == null) {
+        final emptyResponse = {
+          'data': <Map<String, dynamic>>[],
+          'total': 0,
+        };
+        return JobAdResponse.fromJson(emptyResponse);
+      }
+      
+      throw Exception('Unexpected response type: ${response.runtimeType}');
+      
+    } catch (e) {
+      // Re-throw with more context if it's already an Exception
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      // Wrap other errors
+      throw Exception('Failed to fetch job ads: $e');
     }
-    
-    throw Exception('API response format is not as expected for JobAdResponse.');
   }
 
   Future<List<BestAdvertiser>> getBestAdvertisers({String? token}) async {

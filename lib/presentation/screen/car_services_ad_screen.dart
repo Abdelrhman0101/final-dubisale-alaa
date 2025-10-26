@@ -18,6 +18,7 @@ import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
+import 'package:geocoding/geocoding.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -77,6 +78,9 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
       // التحقق من بيانات البروفايل
       final authProvider = context.read<AuthProvider>();
       await _checkUserProfileData(authProvider);
+
+      // تطبيق العنوان المختار لتحريك الخريطة عند فتح الصفحة
+      await _applySelectedLocationAddress();
     });
   }
   
@@ -88,6 +92,24 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _applySelectedLocationAddress() async {
+    try {
+      if (selectedLocation.isNotEmpty && selectedLatLng == null) {
+        final locations = await locationFromAddress(selectedLocation);
+        if (locations.isNotEmpty) {
+          final loc = locations.first;
+          final latLng = LatLng(loc.latitude, loc.longitude);
+          setState(() => selectedLatLng = latLng);
+          await context.read<GoogleMapsProvider>().moveCameraToLocation(
+              latLng.latitude, latLng.longitude,
+              zoom: 16.0);
+        }
+      }
+    } catch (e) {
+      debugPrint('Geocoding failed: $e');
+    }
   }
 
   // --- دوال الصور (منسوخة من شاشة السيارات) ---
@@ -255,6 +277,33 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
                   ),
                 ),
               ),
+            
+              const SizedBox(height: 8),
+            SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            
             ],
           ),
         );
@@ -580,7 +629,7 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
                               children: [
                                 SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h),
                                 SizedBox(width: 8.w),
-                                Expanded(child: Text(selectedLocation.isNotEmpty ? selectedLocation : "noLocationSelected", style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500))),
+                                Expanded(child: Text(selectedLocation.isNotEmpty ? selectedLocation : S.of(context).advertiserLocation, style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500))),
                               ],
                             ),
                           ),
@@ -731,20 +780,28 @@ class _CarServicesAdScreenState extends State<CarServicesAdScreen> {
               child: Row(
                 children: [
                    Expanded(
-                    child: ElevatedButton.icon(
-                      icon: _isLoadingLocation ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Icon(Icons.my_location, color: Colors.white, size: 20),
-                      label: Text('Locate Me', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14)),
+                    child: ElevatedButton(
                       onPressed: _isLoadingLocation ? null : _getCurrentLocation,
-                      style: ElevatedButton.styleFrom(backgroundColor: _isLoadingLocation ? Colors.grey : KPrimaryColor, minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isLoadingLocation ? Colors.grey : KPrimaryColor,
+                        minimumSize: const Size(double.infinity, 43),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: _isLoadingLocation
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+                          : const Text('Locate Me', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14)),
                     ),
                   ),
                    SizedBox(width: 10),
                    Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
-                      label: const Text('open Google map', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12)),
+                    child: ElevatedButton(
                       onPressed: _navigateToLocationPicker,
-                       style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF01547E), minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF01547E),
+                        minimumSize: const Size(double.infinity, 43),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Pick Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 13.5)),
                     ),
                   ),
                 ],
@@ -929,3 +986,7 @@ class TitledDescriptionBox extends StatelessWidget {
     ],);
   }
 }
+
+
+// Remove erroneous top-level function
+// Future<void> _applySelectedLocationAddress() async {}

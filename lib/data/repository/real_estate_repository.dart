@@ -82,16 +82,69 @@ class RealEstateRepository {
   final ApiService _apiService;
   RealEstateRepository(this._apiService);
 
-  Future<RealEstateAdResponse> getRealEstateAds({String? token, Map<String, dynamic>? query}) async {
-    final response = await _apiService.get('/api/real-estates', query: query);
-    if (response is Map<String, dynamic>) {
-      return RealEstateAdResponse.fromJson(response);
+  Future<RealEstateAdResponse> getRealEstateAds({ Map<String, dynamic>? query}) async {
+    try {
+      final response = await _apiService.get('/api/real-estates', query: query);
+      
+      // Handle different response formats
+      if (response is Map<String, dynamic>) {
+        // Check if response has the expected structure with 'data' key
+        if (response.containsKey('data')) {
+          return RealEstateAdResponse.fromJson(response);
+        }
+        
+        // Check if response has 'ads' key (alternative format)
+        if (response.containsKey('ads')) {
+          final transformedResponse = {
+            'data': response['ads'],
+            'total': response['total'] ?? response['count'] ?? 0,
+          };
+          return RealEstateAdResponse.fromJson(transformedResponse);
+        }
+        
+        // Check if it's an error response
+        if (response.containsKey('error') || response.containsKey('message')) {
+          final errorMessage = response['error'] ?? response['message'] ?? 'Unknown API error';
+          throw Exception('API Error: $errorMessage');
+        }
+        
+        // If response is a map but doesn't have expected keys, throw error
+        throw Exception('Unexpected API response format: ${response.keys.join(', ')}');
+      }
+      
+      // Handle direct list response
+      if (response is List) {
+        final transformedResponse = {
+          'data': response,
+          'total': response.length,
+        };
+        return RealEstateAdResponse.fromJson(transformedResponse);
+      }
+      
+      // Handle null or empty response
+      if (response == null) {
+        final emptyResponse = {
+          'data': <Map<String, dynamic>>[],
+          'total': 0,
+        };
+        return RealEstateAdResponse.fromJson(emptyResponse);
+      }
+      
+      throw Exception('Unexpected response type: ${response.runtimeType}');
+      
+    } catch (e) {
+      // Re-throw with more context if it's already an Exception
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      // Wrap other errors
+      throw Exception('Failed to fetch real estate ads: $e');
     }
-    throw Exception('API response format is not as expected for RealEstateAdResponse.');
   }
 
   // --- دوال لجلب بيانات الفلاتر لشاشة الإضافة ---
-  Future<RealEstateOptions> getRealEstateOptions({String? token}) async {
+  Future<RealEstateOptions> getRealEstateOptions() async {
     final response = await _apiService.get('/api/real_estate_options');
     if (response is Map<String, dynamic>) {
       return RealEstateOptions.fromJson(response);
@@ -99,7 +152,7 @@ class RealEstateRepository {
     throw Exception('Failed to parse real estate options.');
   }
 
-  Future<List<EmirateModel>> getEmirates({String? token}) async {
+  Future<List<EmirateModel>> getEmirates() async {
     final response = await _apiService.get('/api/locations/emirates');
     if (response is Map<String, dynamic> && response.containsKey('emirates')) {
       return (response['emirates'] as List).map((json) => EmirateModel.fromJson(json)).toList();
@@ -108,7 +161,7 @@ class RealEstateRepository {
   }
 
   // دالة لجلب تفاصيل عقار واحد
-  Future<RealEstateAdModel> getRealEstateDetails({String? token, required String id}) async {
+  Future<RealEstateAdModel> getRealEstateDetails({ required String id}) async {
     // Use plural endpoint to match RESTful resource routes
     final response = await _apiService.get('/api/real-estates/$id');
     if (response is Map<String, dynamic>) {

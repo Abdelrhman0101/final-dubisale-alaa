@@ -1,4 +1,5 @@
 import 'package:advertising_app/constant/string.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/data/model/ad_priority.dart';
 import 'package:advertising_app/data/model/car_rent_model.dart';
 import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FavoriteCard extends StatefulWidget {
   final FavoriteItemInterface item;
@@ -50,11 +52,12 @@ class _FavoriteCardState extends State<FavoriteCard> {
       clipBehavior: Clip.antiAlias, // لتحسين شكل الحواف الدائرية
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // 1. الجزء العلوي: الصور والقلب الأحمر
           _buildImageSlider(),
           // 2. الجزء السفلي: التفاصيل المبنية بذكاء
-          _buildDynamicCardDetails(),
+          Flexible(child: _buildDynamicCardDetails()),
         ],
       ),
     );
@@ -75,8 +78,7 @@ class _FavoriteCardState extends State<FavoriteCard> {
             controller: _pageController,
             itemCount: item.images.length,
             onPageChanged: (index) => setState(() => _currentPage = index),
-            itemBuilder: (context, index) => Image.asset(item.images[index],
-                fit: BoxFit.cover, width: double.infinity),
+            itemBuilder: (context, index) => _buildImageWidget(item.images[index]),
           ),
         ),
         Positioned(
@@ -138,13 +140,17 @@ class _FavoriteCardState extends State<FavoriteCard> {
     detailsChildren.add(SizedBox(height: 8.h));
     detailsChildren.add(Text(item.title,
         style: TextStyle(
-            color: KTextColor, fontWeight: FontWeight.w600, fontSize: 16.sp)));
+            color: KTextColor, fontWeight: FontWeight.w600, fontSize: 16.sp),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis));
 
     // --- إضافة الأجزاء الاختيارية بناءً على التصنيف ---
     switch (widget.categoryIndex) {
       case 0: // سيارات للبيع (لديها line1)
         detailsChildren.add(SizedBox(height: 6.h));
         detailsChildren.add(RichText(
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           text: TextSpan(
             style: TextStyle(
                 color: KTextColor, fontSize: 14.sp, fontFamily: 'Poppins'),
@@ -172,7 +178,9 @@ class _FavoriteCardState extends State<FavoriteCard> {
               style: TextStyle(
                   color: Color.fromRGBO(0, 30, 90, 1),
                   fontSize: 14,
-                  fontWeight: FontWeight.w600)));
+                  fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis));
         }
         break;
 
@@ -195,7 +203,9 @@ class _FavoriteCardState extends State<FavoriteCard> {
             style: TextStyle(
                 color: Color.fromRGBO(0, 30, 90, 1),
                 fontSize: 14,
-                fontWeight: FontWeight.w600)));
+                fontWeight: FontWeight.w600),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis));
         break;
     }
 
@@ -206,7 +216,9 @@ class _FavoriteCardState extends State<FavoriteCard> {
           style: TextStyle(
               fontSize: 14.sp,
               color: KTextColor,
-              fontWeight: FontWeight.w500)));
+              fontWeight: FontWeight.w500),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis));
     }
     detailsChildren.add(_buildLocationAndDeleteRow());
     detailsChildren.add(_buildContactRow());
@@ -216,6 +228,7 @@ class _FavoriteCardState extends State<FavoriteCard> {
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: detailsChildren,
       ),
     );
@@ -343,6 +356,41 @@ class _FavoriteCardState extends State<FavoriteCard> {
                 color: KTextColor, fontSize: 12, fontWeight: FontWeight.w400)),
         if (data.$2 != null) ...[const SizedBox(width: 2), data.$2!],
       ]),
+    );
+  }
+
+  /// بناء ويدجت الصورة باستخدام ImageUrlHelper
+  Widget _buildImageWidget(String imagePath) {
+    final fullImageUrl = ImageUrlHelper.getFullImageUrl(imagePath);
+    
+    if (fullImageUrl.isEmpty) {
+      return Container(
+        width: double.infinity,
+        height: 200,
+        color: Colors.grey[300],
+        child: const Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+      );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: fullImageUrl,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: 200,
+      placeholder: (context, url) => Container(
+        width: double.infinity,
+        height: 200,
+        color: Colors.grey[300],
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      errorWidget: (context, url, error) => Container(
+        width: double.infinity,
+        height: 200,
+        color: Colors.grey[300],
+        child: const Icon(Icons.error, size: 50, color: Colors.red),
+      ),
     );
   }
 }

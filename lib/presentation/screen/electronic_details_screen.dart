@@ -19,6 +19,9 @@ import 'package:advertising_app/constant/image_url_helper.dart';
 import 'package:advertising_app/utils/phone_number_formatter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:advertising_app/presentation/widget/location_map.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 // Consts
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -35,7 +38,7 @@ class ElectronicDetailsScreen extends StatefulWidget {
       _ElectronicDetailsScreenState();
 }
 
-class _ElectronicDetailsScreenState extends State<ElectronicDetailsScreen> {
+class _ElectronicDetailsScreenState extends State<ElectronicDetailsScreen> with FavoritesHelper {
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -43,6 +46,7 @@ class _ElectronicDetailsScreenState extends State<ElectronicDetailsScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ElectronicDetailsProvider>().fetchAdDetails(widget.adId);
     });
@@ -214,12 +218,16 @@ class _ElectronicDetailsScreenState extends State<ElectronicDetailsScreen> {
                     top: 40.h,
                     left: isArabic ? 16.w : null,
                     right: isArabic ? null : 16.w,
-                    child: Icon(Icons.favorite_border,
-                        color: Colors.white,
-                        size: 30.sp,
-                        shadows: [
-                          Shadow(blurRadius: 2, color: Colors.black54)
-                        ])),
+                    child: buildFavoriteIcon(
+                      ElectronicAdItemAdapter(ad),
+                      onAddToFavorite: () {
+                        // Add to favorites callback
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                        );
+                      },
+                      onRemoveFromFavorite: null, // No delete callback for details screen
+                    )),
                 Positioned(
                     top: 80.h,
                     left: isArabic ? 16.w : null,
@@ -522,5 +530,55 @@ class _ElectronicDetailsScreenState extends State<ElectronicDetailsScreen> {
         child: Center(child: Icon(icon, color: Colors.white, size: 20.sp)),
       ),
     );
+  }
+}
+
+class ElectronicAdItemAdapter implements FavoriteItemInterface {
+  final ElectronicAdModel electronic;
+
+  ElectronicAdItemAdapter(this.electronic);
+
+  @override
+  String get id => electronic.id.toString();
+
+  @override
+  String get title => electronic.title ?? '';
+
+  @override
+  String get location => electronic.area ?? '';
+
+  @override
+  String get price => electronic.price?.toString() ?? '';
+
+  @override
+  String get line1 => electronic.title ?? '';
+
+  @override
+  String get details => electronic.description ?? '';
+
+  @override
+  String get date => electronic.createdAt ?? '';
+
+  @override
+  String get contact => electronic.phoneNumber ?? '';
+
+  @override
+  bool get isPremium => electronic.isPremium ?? false;
+
+  @override
+  List<String> get images => electronic.images ?? [];
+
+  @override
+  String get category => 'electronics';
+
+  @override
+  String get addCategory => 'Electronics';
+
+  @override
+  AdPriority get priority {
+    if (electronic.isPremium == true) {
+      return AdPriority.premium;
+    }
+    return AdPriority.free;
   }
 }

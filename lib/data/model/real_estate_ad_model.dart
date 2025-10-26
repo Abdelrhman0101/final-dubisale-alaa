@@ -19,6 +19,7 @@ class RealEstateAdModel {
   final String? planType;
   final String? createdAt;
   final String location;
+  final String? addCategory; // Dynamic category from API
 
   RealEstateAdModel(this.location, {
     required this.id,
@@ -37,6 +38,7 @@ class RealEstateAdModel {
     required this.thumbnailImages,
     this.planType,
     this.createdAt,
+    this.addCategory,
   });
 
   factory RealEstateAdModel.fromJson(Map<String, dynamic> json) {
@@ -72,6 +74,7 @@ class RealEstateAdModel {
       thumbnailImages: thumbs,
       planType: json['plan_type'],
       createdAt: json['created_at'],
+      addCategory: json['add_category'],
     );
   }
 }

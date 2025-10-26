@@ -365,7 +365,7 @@ class _CarRentScreenState extends State<CarRentScreen> {
                 Spacer(),
                 InkWell(
                   onTap: () {
-                    context.push('/all_ad_car_rent');
+                    context.push("/all_ad_car_sales");
                   },
                   child: Text(
                     s.see_all_ads,
@@ -597,7 +597,10 @@ class _CarRentScreenState extends State<CarRentScreen> {
                       Spacer(),
                       InkWell(
                         onTap: () {
-                          context.push('/all_ad_car_rent');
+                           final advertiserId = advertiser.id.toString();
+                        debugPrint('Navigating to all ads with advertiser ID: $advertiserId');
+                        context.push('/all_ad_car_sales/$advertiserId');
+                    
                         },
                         child: Text(
                           s.see_all_ads,

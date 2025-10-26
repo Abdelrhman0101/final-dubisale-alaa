@@ -35,5 +35,11 @@ class JobModel implements FavoriteItemInterface {
   String get line1 => requirment;
 
   @override
+  String get category => 'Jop'; // Category for jobs
+
+  @override
+  String get addCategory => 'Jop'; // API expects lowercase
+
+  @override
   List<String> get images => _images;
 }

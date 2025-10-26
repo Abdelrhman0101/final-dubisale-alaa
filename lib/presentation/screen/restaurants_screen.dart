@@ -241,7 +241,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                       SizedBox(height: 4.h),
                       Padding(
                         padding:
-                            EdgeInsetsDirectional.symmetric(horizontal: 8.w),
+                            EdgeInsetsDirectional.symmetric(horizontal: 0.w),
                         child: UnifiedSearchButton(
                           text: s.search,
                           onPressed: () {
@@ -418,7 +418,17 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                               const Spacer(),
                                               InkWell(
                                                 onTap: () {
-                                                  context.push('/AllAddsRestaurant');
+                                                  // استخدام advertiserId بدلاً من user_id للحصول على معرف المعلن الصحيح
+                                                  final advertiserId = advertiser.id.toString();
+                            debugPrint('Navigating to all ads with advertiser ID: $advertiserId');
+                            // التحقق من أن معرف المعلن ليس صفر
+                            if (advertiserId == '0') {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('لا يمكن عرض إعلانات هذا المعلن حالياً'))
+                              );
+                              return;
+                            }
+                            context.push('/all_ad_car_sales/$advertiserId');
                                                 },
                                                 child: Text(
                                                   s.see_all_ads,

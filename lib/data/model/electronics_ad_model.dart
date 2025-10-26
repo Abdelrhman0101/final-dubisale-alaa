@@ -30,12 +30,18 @@ class ElectronicAdModel implements FavoriteItemInterface {
   final String? phoneNumber;
   final String? whatsappNumber;
   final String? addres;
+  final String? _addCategory; // Dynamic category from API
 
   // -- الخصائص المطلوبة من FavoriteItemInterface لعرضها في الكارد --
   @override
   String get contact => advertiserName;
   @override
   String get details => "${productName ?? 'N/A'}";
+  @override
+  String get category => 'Electronics'; // Category for electronics
+  
+  @override
+  String get addCategory => this._addCategory ?? 'electronics'; // API expects lowercase
 
   @override
   String get Title => "${productName ?? 'N/A'}";
@@ -85,7 +91,8 @@ class ElectronicAdModel implements FavoriteItemInterface {
     this.contactInfo,
     this.phoneNumber,
     this.whatsappNumber,
-  });
+    String? addCategory,
+  }) : _addCategory = addCategory;
 
   factory ElectronicAdModel.fromJson(Map<String, dynamic> json) {
     List<String> thumbs = [];
@@ -120,6 +127,7 @@ class ElectronicAdModel implements FavoriteItemInterface {
       contactInfo: json['contact_info'],
       phoneNumber: json['phone_number'],
       whatsappNumber: json['whatsapp_number'],
+      addCategory: json['add_category']?.toString(),
     );
   }
 }

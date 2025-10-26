@@ -7,6 +7,9 @@ import 'package:advertising_app/presentation/widget/custom_button.dart';
 import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/restaurants_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/settings_provider.dart';
+import 'package:advertising_app/presentation/providers/other_services_ad_post_provider.dart';
+import 'package:advertising_app/presentation/providers/electronics_ad_post_provider.dart';
+import 'package:advertising_app/presentation/providers/job_ad_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -196,15 +199,31 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
         print('Submission result: $success');
         print('Submission error: $submissionError');
         print('=== Real Estate Ad Submission Complete ===');
+      } else if (adType == 'electronics') {
+        final provider = context.read<ElectronicsAdPostProvider>();
+        success = await provider.submitElectronicsAd(widget.adData!);
+        submissionError = provider.error;
+      } else if (adType == 'job') {
+        final provider = context.read<JobAdProvider>();
+        success = await provider.submitJobAd(widget.adData!);
+        submissionError = provider.submitAdError;
+      } else if (adType == 'other_service') {
+        final provider = context.read<OtherServicesAdPostProvider>();
+        success = await provider.submitOtherServiceAd(widget.adData!);
+        submissionError = provider.error;
       }
 
       if (!mounted) return;
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نشر الإعلان بنجاح!'), backgroundColor: Colors.green));
-        context.go('/home'); // أو العودة للصفحة الرئيسية
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نشر الإعلان بنجاح!'), backgroundColor: Colors.green));
+          context.go('/home'); // أو العودة للصفحة الرئيسية
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(submissionError ?? 'فشل في نشر الإعلان'), backgroundColor: Colors.red));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(submissionError ?? 'فشل في نشر الإعلان'), backgroundColor: Colors.red));
+        }
       }
 
     } catch (e) {
@@ -517,7 +536,7 @@ class _PlaceAnAdState extends State<PlaceAnAd> {
                           ontap: _submitAdWithType,
                           text: s.submit,
                         ),
-                  // SizedBox(height: 8),
+                   SizedBox(height: 8),
                   // Text(
                   //   s.top_of_day_note,
                   //   style: TextStyle(

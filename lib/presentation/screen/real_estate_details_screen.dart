@@ -19,6 +19,9 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:advertising_app/utils/number_formatter.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 class RealEstateDetailsScreen extends StatefulWidget {
   final String adId;
@@ -29,7 +32,7 @@ class RealEstateDetailsScreen extends StatefulWidget {
       _RealEstateDetailsScreenState();
 }
 
-class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
+class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> with FavoritesHelper {
   int _currentPage = 0;
   late PageController _pageController;
 
@@ -37,6 +40,7 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when screen initializes
     
     // Fetch real estate details when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -238,10 +242,15 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
                       top: 40.h,
                       left: isArabic ? 16.w : null,
                       right: isArabic ? null : 16.w,
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: Colors.white,
-                        size: 30.sp,
+                      child: buildFavoriteIcon(
+                        RealEstateAdItemAdapter(realEstate),
+                        onAddToFavorite: () {
+                          // Add to favorites callback
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                          );
+                        },
+                        onRemoveFromFavorite: null, // No delete callback for details screen
                       ),
                     ),
 
@@ -804,5 +813,56 @@ class _RealEstateDetailsScreenState extends State<RealEstateDetailsScreen> {
     } catch (e) {
       print('Error making phone call: $e');
     }
+  }
+}
+
+// Adapter class to make RealEstateAdModel compatible with FavoriteItemInterface
+class RealEstateAdItemAdapter implements FavoriteItemInterface {
+  final RealEstateAdModel realEstate;
+
+  RealEstateAdItemAdapter(this.realEstate);
+
+  @override
+  String get id => realEstate.id.toString();
+
+  @override
+  String get title => realEstate.title ?? '';
+
+  @override
+  String get location => realEstate.location ?? '';
+
+  @override
+  String get price => realEstate.price ?? '';
+
+  @override
+  String get line1 => realEstate.title ?? '';
+
+  @override
+  String get details => realEstate.description ?? '';
+
+  @override
+  String get date => realEstate.createdAt ?? '';
+
+  @override
+  String get contact => realEstate.phoneNumber ?? '';
+
+  @override
+  bool get isPremium => realEstate.planType == 'premium';
+
+  @override
+  List<String> get images => realEstate.thumbnailImages ?? [];
+
+  @override
+  String get category => 'Real State';
+
+  @override
+  String get addCategory => realEstate.addCategory ?? 'Real State';
+
+  @override
+  AdPriority get priority {
+    if (realEstate.planType == 'premium') {
+      return AdPriority.premium;
+    }
+    return AdPriority.free;
   }
 }

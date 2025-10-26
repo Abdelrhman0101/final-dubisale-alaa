@@ -20,7 +20,6 @@ const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
 const Color KPrimaryColor = Color.fromRGBO(1, 84, 126, 1);
 final Color borderColor = Color.fromRGBO(8, 194, 201, 1);
 
-
 class JobScreen extends StatefulWidget {
   const JobScreen({super.key});
 
@@ -118,7 +117,8 @@ class _JobScreenState extends State<JobScreen> {
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8.r),
-                                borderSide: BorderSide(color: borderColor, width: 1.5),
+                                borderSide:
+                                    BorderSide(color: borderColor, width: 1.5),
                               ),
                               filled: true,
                               fillColor: Colors.white,
@@ -183,43 +183,49 @@ class _JobScreenState extends State<JobScreen> {
                         ],
                       ),
                       SizedBox(height: 4.h),
-
                       Consumer<JobAdProvider>(
                         builder: (context, provider, _) {
-                          final emirateItems = ['All', ...provider.emirateNames];
+                          final emirateItems = [
+                            'All',
+                            ...provider.emirateNames
+                          ];
                           return UnifiedDropdown(
                             title: s.emirate,
                             selectedValue: _selectedEmirate,
                             items: emirateItems,
-                            onConfirm: (selection) => setState(() => _selectedEmirate = selection),
+                            onConfirm: (selection) =>
+                                setState(() => _selectedEmirate = selection),
                             isLoading: provider.isEmiratesLoading,
                           );
                         },
                       ),
-                      
                       SizedBox(height: 3.h),
-                     
                       Consumer<JobAdProvider>(
                         builder: (context, provider, _) {
-                          final categoryTypeItems = ['All', ...provider.categoryTypes];
+                          final categoryTypeItems = [
+                            'All',
+                            ...provider.categoryTypes
+                          ];
                           return UnifiedDropdown(
                             title: s.category_type,
                             selectedValue: _selectedCategoryType,
                             items: categoryTypeItems,
-                            onConfirm: (selection) => setState(() => _selectedCategoryType = selection),
+                            onConfirm: (selection) => setState(
+                                () => _selectedCategoryType = selection),
                             isLoading: provider.isCategoryTypesLoading,
                           );
                         },
                       ),
-                      
                       SizedBox(height: 4.h),
-                      
                       UnifiedSearchButton(
                         onPressed: () {
                           // Validation: يتطلب اختيار الإمارة ونوع الفئة (يسمح بـ All)
-                          if (_selectedEmirate == null || _selectedCategoryType == null) {
+                          if (_selectedEmirate == null ||
+                              _selectedCategoryType == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("please select required fields")),
+                              SnackBar(
+                                  content:
+                                      Text("please select required fields")),
                             );
                             return;
                           }
@@ -227,7 +233,8 @@ class _JobScreenState extends State<JobScreen> {
                           // حفظ الفلاتر في الـ Provider قبل الانتقال
                           final provider = context.read<JobAdProvider>();
                           provider.updateSelectedEmirate(_selectedEmirate);
-                          provider.updateSelectedCategoryType(_selectedCategoryType);
+                          provider.updateSelectedCategoryType(
+                              _selectedCategoryType);
 
                           context.push('/job_search');
                         },
@@ -289,14 +296,16 @@ class _JobScreenState extends State<JobScreen> {
                       Consumer<JobAdProvider>(
                         builder: (context, provider, _) {
                           if (provider.isBestAdvertisersLoading) {
-                            return const Center(child: CircularProgressIndicator());
+                            return const Center(
+                                child: CircularProgressIndicator());
                           }
 
                           if (provider.bestAdvertisersError != null) {
                             return Center(
                               child: Text(
                                 'Error: ${provider.bestAdvertisersError}',
-                                style: TextStyle(color: Colors.red, fontSize: 14.sp),
+                                style: TextStyle(
+                                    color: Colors.red, fontSize: 14.sp),
                               ),
                             );
                           }
@@ -305,41 +314,57 @@ class _JobScreenState extends State<JobScreen> {
                             return Center(
                               child: Text(
                                 s.noResultsFound,
-                                style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                                style: TextStyle(
+                                    color: Colors.grey, fontSize: 14.sp),
                               ),
                             );
                           }
 
                           // بناء الأقسام من البيانات الفعلية
                           return Column(
-                            children: provider.bestAdvertisers.map((advertiser) {
+                            children:
+                                provider.bestAdvertisers.map((advertiser) {
                               // فلترة إعلانات الوظائف فقط
                               final jobAds = advertiser.ads.where((ad) {
-                                final category = ad.category?.toLowerCase() ?? '';
+                                final category =
+                                    ad.category?.toLowerCase() ?? '';
                                 return category.contains('job');
                               }).toList();
 
-                              if (jobAds.isEmpty) return const SizedBox.shrink();
+                              if (jobAds.isEmpty)
+                                return const SizedBox.shrink();
 
                               return Column(
                                 children: [
                                   Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 8.w, vertical: 8.h),
                                     child: Row(
                                       children: [
                                         Expanded(
                                           child: Text(
                                             advertiser.name,
-                                            style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: KTextColor),
+                                            style: TextStyle(
+                                                fontSize: 15.sp,
+                                                fontWeight: FontWeight.w600,
+                                                color: KTextColor),
                                           ),
                                         ),
                                         InkWell(
-                                          onTap: () => context.push('/all_add_job'),
+                                          onTap: () {
+                                            final advertiserId =
+                                                advertiser.id.toString();
+                                            debugPrint(
+                                                'Navigating to all ads with advertiser ID: $advertiserId');
+                                            context.push(
+                                                '/all_ad_car_sales/$advertiserId');
+                                          },
                                           child: Text(
                                             s.see_all_ads,
                                             style: TextStyle(
                                               fontSize: 14.sp,
-                                              decoration: TextDecoration.underline,
+                                              decoration:
+                                                  TextDecoration.underline,
                                               decorationColor: borderColor,
                                               color: borderColor,
                                               fontWeight: FontWeight.w500,
@@ -355,77 +380,148 @@ class _JobScreenState extends State<JobScreen> {
                                     child: ListView.builder(
                                       scrollDirection: Axis.horizontal,
                                       itemCount: min(jobAds.length, 20),
-                                      padding: EdgeInsets.symmetric(horizontal: 5.w),
+                                      padding:
+                                          EdgeInsets.symmetric(horizontal: 5.w),
                                       itemBuilder: (context, index) {
                                         final ad = jobAds[index];
                                         // استخدام صور الفئات من JobAdProvider بدلًا من صورة وهمية
-                                        final jobsProvider = Provider.of<JobAdProvider>(context, listen: false);
-                                        final imagePath = jobsProvider.categoryImages['job_offer']
-                                          ?? jobsProvider.categoryImages['job_seeker']
-                                          ?? '';
-                                        final imageUrl = ImageUrlHelper.getFullImageUrl(imagePath);
+                                        final jobsProvider =
+                                            Provider.of<JobAdProvider>(context,
+                                                listen: false);
+                                        final imagePath = jobsProvider
+                                                .categoryImages['job_offer'] ??
+                                            jobsProvider
+                                                .categoryImages['job_seeker'] ??
+                                            '';
+                                        final imageUrl =
+                                            ImageUrlHelper.getFullImageUrl(
+                                                imagePath);
                                         // نص السعر/الراتب ليُستخدم لاحقًا في عناصر الواجهة
-                                        final priceText = (ad.priceRange ?? ad.salary ?? '').trim();
+                                        final priceText =
+                                            (ad.priceRange ?? ad.salary ?? '')
+                                                .trim();
 
                                         return Padding(
-                                          padding: EdgeInsetsDirectional.only(end: index == jobAds.length - 1 ? 0 : 4.w),
+                                          padding: EdgeInsetsDirectional.only(
+                                              end: index == jobAds.length - 1
+                                                  ? 0
+                                                  : 4.w),
                                           child: Container(
                                             width: 145,
                                             decoration: BoxDecoration(
                                               color: Colors.white,
-                                              borderRadius: BorderRadius.circular(4.r),
-                                              border: Border.all(color: Colors.grey.shade300),
+                                              borderRadius:
+                                                  BorderRadius.circular(4.r),
+                                              border: Border.all(
+                                                  color: Colors.grey.shade300),
                                               boxShadow: [
-                                                BoxShadow(color: Colors.grey.withOpacity(0.15), blurRadius: 5.r, offset: Offset(0, 2.h)),
+                                                BoxShadow(
+                                                    color: Colors.grey
+                                                        .withOpacity(0.15),
+                                                    blurRadius: 5.r,
+                                                    offset: Offset(0, 2.h)),
                                               ],
                                             ),
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Stack(
                                                   children: [
                                                     ClipRRect(
-                                                      borderRadius: BorderRadius.circular(4.r),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              4.r),
                                                       child: imageUrl.isNotEmpty
                                                           ? CachedNetworkImage(
-                                                              imageUrl: imageUrl,
+                                                              imageUrl:
+                                                                  imageUrl,
                                                               height: 94.h,
-                                                              width: double.infinity,
+                                                              width: double
+                                                                  .infinity,
                                                               fit: BoxFit.cover,
-                                                              placeholder: (context, url) => const Center(
-                                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                                              placeholder: (context,
+                                                                      url) =>
+                                                                  const Center(
+                                                                child: CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2),
                                                               ),
-                                                              errorWidget: (context, url, error) => const SizedBox.shrink(),
+                                                              errorWidget: (context,
+                                                                      url,
+                                                                      error) =>
+                                                                  const SizedBox
+                                                                      .shrink(),
                                                             )
                                                           : const Center(
-                                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                      strokeWidth:
+                                                                          2),
                                                             ),
                                                     ),
-                                                    Positioned(top: 8, right: 8, child: Icon(Icons.favorite_border, color: Colors.grey.shade300)),
+                                                    Positioned(
+                                                        top: 8,
+                                                        right: 8,
+                                                        child: Icon(
+                                                            Icons
+                                                                .favorite_border,
+                                                            color: Colors.grey
+                                                                .shade300)),
                                                   ],
                                                 ),
                                                 Expanded(
                                                   child: Padding(
-                                                    padding: EdgeInsets.symmetric(horizontal: 6.w),
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 6.w),
                                                     child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceEvenly,
                                                       children: [
                                                         // عرض الراتب/نطاق السعر بشكل آمن
-                                                        if (priceText.isNotEmpty)
+                                                        if (priceText
+                                                            .isNotEmpty)
                                                           Text(
                                                             "${NumberFormatter.formatPrice(priceText)}",
-                                                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 11.5.sp),
+                                                            style: TextStyle(
+                                                                color:
+                                                                    Colors.red,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                fontSize:
+                                                                    11.5.sp),
                                                           ),
                                                         Text(
-                                                          ad.job_name ?? 'No title',
+                                                          ad.job_name ??
+                                                              'No title',
                                                           maxLines: 1,
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5.sp, color: KTextColor),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              fontSize: 11.5.sp,
+                                                              color:
+                                                                  KTextColor),
                                                         ),
                                                         Text(
-                                                          '${ad.emirate ?? ''} ${ad.district ?? ''}'.trim(),
-                                                          style: TextStyle(fontSize: 11.5.sp, color: const Color.fromRGBO(165, 164, 162, 1), fontWeight: FontWeight.w600),
+                                                          '${ad.emirate ?? ''} ${ad.district ?? ''}'
+                                                              .trim(),
+                                                          style: TextStyle(
+                                                              fontSize: 11.5.sp,
+                                                              color: const Color
+                                                                  .fromRGBO(165,
+                                                                  164, 162, 1),
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600),
                                                         ),
                                                       ],
                                                     ),
@@ -456,4 +552,3 @@ class _JobScreenState extends State<JobScreen> {
     );
   }
 }
-

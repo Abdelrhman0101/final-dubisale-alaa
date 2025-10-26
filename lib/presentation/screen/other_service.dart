@@ -153,8 +153,10 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                   padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
                   child: Column(
                     children: [
+                      // قسم عروض الخدمات اليومية والفلاتر كما كان سابقاً
                       Row(
                         children: [
+                          SizedBox(width: 4.w),
                           Icon(Icons.star, color: Colors.amber, size: 20.sp),
                           SizedBox(width: 6.w),
                           Text(
@@ -168,7 +170,7 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                         ],
                       ),
                       SizedBox(height: 4.h),
-                      
+
                       Consumer<OtherServicesInfoProvider>(
                         builder: (context, info, _) {
                           final emirateItems = ['All', ...info.emirateDisplayNames];
@@ -181,9 +183,9 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                           );
                         },
                       ),
-                     
+
                       SizedBox(height: 3.h),
-                     
+
                       Consumer<OtherServicesInfoProvider>(
                         builder: (context, info, _) {
                           final sectionItems = ['All', ...info.sectionTypes];
@@ -196,7 +198,7 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                           );
                         },
                       ),
-                      
+
                       SizedBox(height: 4.h),
 
                       UnifiedSearchButton(
@@ -219,7 +221,9 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                           });
                         },
                       ),
+
                       SizedBox(height: 7.h),
+
                       Padding(
                         padding: EdgeInsetsDirectional.symmetric(horizontal: 8.w),
                         child: GestureDetector(
@@ -248,7 +252,10 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                           ),
                         ),
                       ),
+
                       SizedBox(height: 5.h),
+
+                      // بداية قسم Top Premium Dealers المُعدل فقط
                       Row(
                         children: [
                           SizedBox(width: 4.w),
@@ -258,84 +265,113 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                         ],
                       ),
                       SizedBox(height: 1.h),
-                      Column(
-                        children: List.generate(3, (sectionIndex) {
-                          return Column(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text("Al Karama Accounting Office", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: KTextColor)),
-                                    const Spacer(),
-                                    InkWell(
-                                      onTap: () { context.push('/all_add_other_service'); },
-                                      child: Text(
-                                        s.see_all_ads,
-                                        style: TextStyle(
-                                          fontSize: 14.sp, decoration: TextDecoration.underline,
-                                          decorationColor: borderColor, color: borderColor, fontWeight: FontWeight.w500),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                      // استخدام بيانات أفضل الوكلاء من OtherServicesInfoProvider
+                      FutureBuilder<List<Map<String, dynamic>>>(
+                        future: context.read<OtherServicesInfoProvider>().getBestDealers(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                'Error: ${snapshot.error}',
+                                style: TextStyle(color: Colors.red, fontSize: 14.sp),
                               ),
-                              SizedBox(
-                                height: 175,
-                                width: double.infinity,
-                                child: Consumer<OtherServicesAdProvider>(
-                                  builder: (context, provider, child) {
-                                    if (provider.isLoading) {
-                                      return const Center(
-                                        child: CircularProgressIndicator(),
-                                      );
-                                    }
+                            );
+                          }
+                          final dealers = snapshot.data ?? [];
+                          if (dealers.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No premium dealers found',
+                                style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                              ),
+                            );
+                          }
+                          return Column(
+                            children: dealers.map((dealer) {
+                              final advertiserName = dealer['advertiser_name']?.toString() ?? dealer['name']?.toString() ?? 'Unknown Advertiser';
+                              final rawId = dealer['advertiser_id'] ?? dealer['id'] ?? dealer['user_id'] ?? 0;
+                              final advertiserId = int.tryParse(rawId.toString()) ?? 0;
+                              final latestAds = (dealer['latest_ads'] is List)
+                                  ? List<Map<String, dynamic>>.from(dealer['latest_ads'])
+                                  : <Map<String, dynamic>>[];
 
-                                    if (provider.error != null) {
-                      return Center(
-                        child: Text(
-                          'Error: ${provider.error}',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 14.sp,
-                          ),
-                        ),
-                      );
-                    }
+                              // لا نعرض القسم إذا لم يكن لديه إعلانات
+                              if (latestAds.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
 
-                                    if (provider.ads.isEmpty) {
-                                      return Center(
-                                        child: Text(
-                                          'No other services ads available',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 14.sp,
+                              return Column(
+                                children: [
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          advertiserName,
+                                          style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: KTextColor),
+                                        ),
+                                        const Spacer(),
+                                        InkWell(
+                                          onTap: () {
+                                            final idStr = advertiserId.toString();
+                                            debugPrint('Navigating to all ads with advertiser ID: $idStr');
+                                            if (idStr == '0') {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('لا يمكن عرض إعلانات هذا المعلن حالياً')),
+                                              );
+                                              return;
+                                            }
+                                            context.push('/all_ad_car_sales/$idStr');
+                                          },
+                                          child: Text(
+                                            s.see_all_ads,
+                                            style: TextStyle(
+                                              fontSize: 14.sp,
+                                              decoration: TextDecoration.underline,
+                                              decorationColor: borderColor,
+                                              color: borderColor,
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                         ),
-                                      );
-                                    }
-
-                                    return ListView.builder(
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    height: 175,
+                                    width: double.infinity,
+                                    child: ListView.builder(
                                       scrollDirection: Axis.horizontal,
-                                      itemCount: min(provider.ads.length, 20),
+                                      itemCount: min(latestAds.length, 20),
                                       padding: EdgeInsets.symmetric(horizontal: 5.w),
                                       itemBuilder: (context, index) {
-                                        final ad = provider.ads[index];
+                                        final ad = latestAds[index];
+                                        final price = ad['price']?.toString() ?? '';
+                                        final serviceName = ad['service_name']?.toString() ?? ad['title']?.toString() ?? 'No title';
+                                        final emirate = ad['emirate']?.toString() ?? '';
+                                        final district = ad['district']?.toString() ?? '';
+                                        final mainImage = ad['main_image']?.toString() ?? ad['image']?.toString() ??
+                                            ((ad['images'] is List && (ad['images'] as List).isNotEmpty) ? (ad['images'] as List).first.toString() : '');
+                                        final imageUrl = ImageUrlHelper.getMainImageUrl(mainImage);
+
                                         return Padding(
-                                          padding: EdgeInsetsDirectional.only(end: index == provider.ads.length - 1 ? 0 : 4.w),
+                                          padding: EdgeInsetsDirectional.only(end: index == latestAds.length - 1 ? 0 : 4.w),
                                           child: Container(
                                             width: 145,
                                             decoration: BoxDecoration(
-                                              color: Colors.white, 
+                                              color: Colors.white,
                                               borderRadius: BorderRadius.circular(4.r),
                                               border: Border.all(color: Colors.grey.shade300),
-                                              boxShadow: [ 
+                                              boxShadow: [
                                                 BoxShadow(
-                                                  color: Colors.grey.withOpacity(0.15), 
-                                                  blurRadius: 5.r, 
-                                                  offset: Offset(0, 2.h)
-                                                )
+                                                  color: Colors.grey.withOpacity(0.15),
+                                                  blurRadius: 5.r,
+                                                  offset: Offset(0, 2.h),
+                                                ),
                                               ],
                                             ),
                                             child: Column(
@@ -345,19 +381,28 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                                                   children: [
                                                     ClipRRect(
                                                       borderRadius: BorderRadius.circular(4.r),
-                                                      child: () {
-                                                        final imageUrl = ImageUrlHelper.getMainImageUrl(ad.mainImage ?? '');
-                                                        if (imageUrl.isNotEmpty) {
-                                                          return CachedNetworkImage(
-                                                            imageUrl: imageUrl,
-                                                            height: 94.h,
-                                                            width: double.infinity,
-                                                            fit: BoxFit.cover,
-                                                            placeholder: (context, url) => Container(
-                                                              color: Colors.grey[300],
-                                                              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                                                            ),
-                                                            errorWidget: (context, url, error) => Container(
+                                                      child: imageUrl.isNotEmpty
+                                                          ? CachedNetworkImage(
+                                                              imageUrl: imageUrl,
+                                                              height: 94.h,
+                                                              width: double.infinity,
+                                                              fit: BoxFit.cover,
+                                                              placeholder: (context, url) => Container(
+                                                                color: Colors.grey[300],
+                                                                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                                              ),
+                                                              errorWidget: (context, url, error) => Container(
+                                                                height: 94.h,
+                                                                width: double.infinity,
+                                                                color: Colors.grey.shade200,
+                                                                child: Icon(
+                                                                  Icons.miscellaneous_services,
+                                                                  color: Colors.grey.shade400,
+                                                                  size: 40,
+                                                                ),
+                                                              ),
+                                                            )
+                                                          : Container(
                                                               height: 94.h,
                                                               width: double.infinity,
                                                               color: Colors.grey.shade200,
@@ -367,24 +412,11 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                                                                 size: 40,
                                                               ),
                                                             ),
-                                                          );
-                                                        }
-                                                        return Container(
-                                                          height: 94.h,
-                                                          width: double.infinity,
-                                                          color: Colors.grey.shade200,
-                                                          child: Icon(
-                                                            Icons.miscellaneous_services,
-                                                            color: Colors.grey.shade400,
-                                                            size: 40,
-                                                          ),
-                                                        );
-                                                      }(),
                                                     ),
-                                                    Positioned( 
-                                                      top: 8, 
-                                                      right: 8, 
-                                                      child: Icon(Icons.favorite_border, color: Colors.grey.shade300)
+                                                    Positioned(
+                                                      top: 8,
+                                                      right: 8,
+                                                      child: Icon(Icons.favorite_border, color: Colors.grey.shade300),
                                                     ),
                                                   ],
                                                 ),
@@ -395,31 +427,31 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                                                       crossAxisAlignment: CrossAxisAlignment.start,
                                                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                                       children: [
-                                                        Text( 
-                                                          "${NumberFormatter.formatPrice(ad.price)}" ?? 'Price not specified', 
+                                                        Text(
+                                                          "${NumberFormatter.formatPrice(price)}",
                                                           style: TextStyle(
-                                                            color: Colors.red, 
-                                                            fontWeight: FontWeight.w600, 
-                                                            fontSize: 11.5.sp
-                                                          )
+                                                            color: Colors.red,
+                                                            fontWeight: FontWeight.w600,
+                                                            fontSize: 11.5.sp,
+                                                          ),
                                                         ),
-                                                        Text( 
-                                                          ad.serviceName ?? 'No title', 
-                                                          maxLines: 1, 
+                                                        Text(
+                                                          serviceName,
+                                                          maxLines: 1,
                                                           overflow: TextOverflow.ellipsis,
                                                           style: TextStyle(
-                                                            fontWeight: FontWeight.w600, 
-                                                            fontSize: 11.5.sp, 
-                                                            color: KTextColor
-                                                          )
+                                                            fontWeight: FontWeight.w600,
+                                                            fontSize: 11.5.sp,
+                                                            color: KTextColor,
+                                                          ),
                                                         ),
-                                                        Text( 
-                                                          '${ad.emirate ?? ''} ${ad.district ?? ''}'.trim(), 
+                                                        Text(
+                                                          '${emirate} ${district}'.trim(),
                                                           style: TextStyle(
-                                                            fontSize: 11.5.sp, 
-                                                            color: const Color.fromRGBO(165, 164, 162, 1), 
-                                                            fontWeight: FontWeight.w600
-                                                          )
+                                                            fontSize: 11.5.sp,
+                                                            color: const Color.fromRGBO(165, 164, 162, 1),
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
                                                         ),
                                                       ],
                                                     ),
@@ -430,13 +462,13 @@ class _OtherServiceScreenState extends State<OtherServiceScreen> {
                                           ),
                                         );
                                       },
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
                           );
-                        }),
+                        },
                       ),
                       SizedBox(height: 16.h),
                     ],

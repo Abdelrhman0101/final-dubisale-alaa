@@ -47,12 +47,14 @@ class CarAdModel {
   final String advertiserName;
   final String mainImage;
   final List<String> thumbnailImages;
-  
-  // --- الحقول الجديدة التي أضفناها بناءً على الأخطاء ---
-  final String? createdAt; 
-  final String? planType;  // هذا سيعوض حقل 'priority' المفقود
+  final String location;
 
-  CarAdModel({
+  // --- الحقول الجديدة التي أضفناها بناءً على الأخطاء ---
+  final String? createdAt;
+  final String? planType; // هذا سيعوض حقل 'priority' المفقود
+  final String? addCategory; // Dynamic category from API
+
+  CarAdModel(this.location, {
     required this.id,
     required this.title,
     required this.description,
@@ -86,20 +88,23 @@ class CarAdModel {
     // ---
     this.createdAt,
     this.planType,
+    this.addCategory,
   });
-  
+
   // مصنع (Factory) آمن يقوم بتحليل الـ JSON ومنع الأخطاء
   factory CarAdModel.fromJson(Map<String, dynamic> json) {
     // التعامل مع قائمة الصور المصغرة بأمان
     var thumbnailsFromJson = json['thumbnail_images'];
     List<String> thumbnailList = [];
     if (thumbnailsFromJson is List) {
-      thumbnailList = List<String>.from(thumbnailsFromJson.map((item) => item.toString()));
+      thumbnailList =
+          List<String>.from(thumbnailsFromJson.map((item) => item.toString()));
     }
 
     return CarAdModel(
       // استخدام .toString() و `??` لضمان عدم حدوث أي خطأ crash
       id: json['id'] ?? 0,
+      json['location']?.toString() ?? '',
       title: json['title']?.toString() ?? 'No Title',
       description: json['description']?.toString() ?? '',
       make: json['make']?.toString() ?? 'N/A',
@@ -115,7 +120,7 @@ class CarAdModel {
       color: json['color']?.toString(),
       interiorColor: json['interior_color']?.toString(),
       // تحويل القيم الرقمية (0, 1) أو النصية ('0', '1') أو (true, false) إلى bool بأمان
-      warranty: ['1', 1, true].contains(json['warranty']), 
+      warranty: ['1', 1, true].contains(json['warranty']),
       engineCapacity: json['engine_capacity']?.toString(),
       cylinders: json['cylinders']?.toString(),
       horsepower: json['horsepower']?.toString(),
@@ -133,6 +138,7 @@ class CarAdModel {
       // ---
       createdAt: json['created_at']?.toString(),
       planType: json['plan_type']?.toString(),
+      addCategory: json['add_category']?.toString(),
     );
   }
 }

@@ -46,14 +46,14 @@ class MyAdModel {
 
   factory MyAdModel.fromJson(Map<String, dynamic> json) {
     return MyAdModel(
-      id: json['id'],
-      title: json['title'],
-      planType: json['plan_type'],
-      mainImageUrl: json['main_image_url'],
-      price: json['price'],
-      status: json['status'],
-      category: json['category'],
-      createdAt: json['created_at'],
+      id: int.tryParse(json['id']?.toString() ?? '') ?? (json['id'] is int ? json['id'] as int : 0),
+      title: json['title']?.toString() ?? '',
+      planType: json['plan_type']?.toString(),
+      mainImageUrl: json['main_image_url']?.toString() ?? '',
+      price: json['price']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      createdAt: json['created_at']?.toString() ?? '',
       make: json['make']?.toString(),
       model: json['model']?.toString(),
       trim: json['trim']?.toString(),
@@ -84,14 +84,30 @@ class MyAdsResponse {
   });
 
   factory MyAdsResponse.fromJson(Map<String, dynamic> json) {
-    var adsList = json['data'] as List;
-    List<MyAdModel> parsedAds = adsList.map((ad) => MyAdModel.fromJson(ad)).toList();
+    // Be tolerant to various API shapes: data, ads, or null
+    List<dynamic> rawList = const [];
+    if (json['data'] is List) {
+      rawList = json['data'] as List;
+    } else if (json['ads'] is List) {
+      rawList = json['ads'] as List;
+    } else {
+      rawList = const [];
+    }
+
+    final parsedAds = rawList
+        .whereType<Map<String, dynamic>>()
+        .map((ad) => MyAdModel.fromJson(ad))
+        .toList();
+
+    final total = json['total'] ?? json['total_ads'] ?? json['count'] ?? parsedAds.length;
+    final currentPage = json['current_page'] ?? json['currentPage'] ?? 1;
+    final lastPage = json['last_page'] ?? json['lastPage'] ?? 1;
 
     return MyAdsResponse(
       ads: parsedAds,
-      total: json['total'],
-      currentPage: json['current_page'],
-      lastPage: json['last_page'],
+      total: total is int ? total : int.tryParse(total.toString()) ?? parsedAds.length,
+      currentPage: currentPage is int ? currentPage : int.tryParse(currentPage.toString()) ?? 1,
+      lastPage: lastPage is int ? lastPage : int.tryParse(lastPage.toString()) ?? 1,
     );
   }
 }

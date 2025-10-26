@@ -33,9 +33,14 @@ class CarServiceModel implements FavoriteItemInterface {
   String get line1 => requirment;
 
   @override
+  String get category => 'Car Services'; // Category for car services
+
+  @override
+  String get addCategory => 'Car Services'; // API expects lowercase with underscores
+
+  @override
   List<String> get images => _images;
   
   @override
-  // TODO: implement id
-  get id => throw UnimplementedError();
+  String get id => title.hashCode.toString();
 }

@@ -56,16 +56,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<CarModel> _getModelsWithAllAndOther(CarAdProvider provider) {
     List<CarModel> modelsWithOptions = [];
-    
+
     // إضافة خيار "All"
     modelsWithOptions.add(CarModel(id: -1, name: "All", makeId: -1));
-    
+
     // إضافة النماذج الحقيقية
     modelsWithOptions.addAll(provider.models);
-    
+
     // إضافة خيار "Other"
     modelsWithOptions.add(CarModel(id: -2, name: "Other", makeId: -2));
-    
+
     return modelsWithOptions;
   }
 
@@ -225,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               Map<String, String> filters = {};
                               final selectedMake = carAdProvider.selectedMake;
                               final selectedModel = carAdProvider.selectedModel;
-                              
+
                               if (selectedMake != null) {
                                 if (selectedMake.id == -2) {
                                   // إذا اختار "Other" في الماركة
@@ -233,9 +233,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 } else if (selectedMake.id > 0) {
                                   // إذا اختار ماركة حقيقية (ليس "All")
                                   filters['make'] = selectedMake.name;
-                                  
+
                                   // إضافة الموديل فقط إذا لم يكن "All" أو null
-                                  if (selectedModel != null && 
+                                  if (selectedModel != null &&
                                       selectedModel.id != -1 && // ليس "All"
                                       selectedModel.name != "All") {
                                     filters['model'] = selectedModel.name;
@@ -317,9 +317,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = S.of(context);
     if (provider.isLoadingTopDealers && provider.topDealerAds.isEmpty)
       return const Center(heightFactor: 5, child: CircularProgressIndicator());
-    
+
     if (provider.topDealersError != null) {
-      return Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text(provider.topDealersError!)));
+      return Center(
+          child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(provider.topDealersError!)));
     }
 
     final dealersWithAds =
@@ -332,9 +335,9 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             GestureDetector(
               onTap: () {
-                      // ننتقل إلى صفحة تفاصيل السيارة باستخدام الـ ID
-                 //     context.push('/car-details/$dealer.id}');
-                    },
+                // ننتقل إلى صفحة تفاصيل السيارة باستخدام الـ ID
+                //     context.push('/car-details/$dealer.id}');
+              },
               child: Padding(
                 padding: EdgeInsetsDirectional.symmetric(
                     horizontal: 16.w, vertical: 8.h),
@@ -346,7 +349,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: KTextColor)),
                   const Spacer(),
                   InkWell(
-                      onTap: () {},
+                      onTap: () {
+                        // تمرير معرف المعلن عند النقر على "عرض كل الإعلانات"
+                        final advertiserId = dealer.id.toString();
+                        debugPrint('Navigating to all ads with advertiser ID: $advertiserId');
+                        context.push('/all_ad_car_sales/$advertiserId');
+                      },
                       child: Text(s.see_all_ads,
                           style: TextStyle(
                               fontSize: 14.sp,
@@ -389,16 +397,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               ClipRRect(
                                   borderRadius: BorderRadius.circular(4.r),
                                   child: CachedNetworkImage(
-                                    imageUrl: ImageUrlHelper.getFullImageUrl(car.mainImage),
+                                    imageUrl: ImageUrlHelper.getFullImageUrl(
+                                        car.mainImage),
                                     height: (94).h,
                                     width: double.infinity,
                                     fit: BoxFit.cover,
                                     placeholder: (context, url) => Container(
                                         color: Colors.grey[300],
-                                        child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-                                    errorWidget: (context, url, error) => Image.asset(
-                                        'assets/images/car.jpg',
-                                        fit: BoxFit.cover),
+                                        child: Center(
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2))),
+                                    errorWidget: (context, url, error) =>
+                                        Image.asset('assets/images/car.jpg',
+                                            fit: BoxFit.cover),
                                   )),
                             ]),
                             Expanded(
@@ -409,7 +420,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceEvenly,
                                   children: [
-                                    Text("${NumberFormatter.formatPrice(car.price)} ",
+                                    Text(
+                                        "${NumberFormatter.formatPrice(car.price)} ",
                                         style: TextStyle(
                                             color: Colors.red,
                                             fontWeight: FontWeight.w600,
@@ -430,7 +442,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     165, 164, 162, 1),
                                                 fontWeight: FontWeight.w600)),
                                         SizedBox(width: 8.w),
-                                        Text("${NumberFormatter.formatKilometers(car.km)}",
+                                        Text(
+                                            "${NumberFormatter.formatKilometers(car.km)}",
                                             style: TextStyle(
                                                 fontSize: 11.5.sp,
                                                 color: const Color.fromRGBO(

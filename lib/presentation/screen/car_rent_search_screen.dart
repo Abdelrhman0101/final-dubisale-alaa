@@ -31,6 +31,9 @@ class CarRentAdCardAdapter implements FavoriteItemInterface {
   @override int get id => _ad.id;
   @override String get contact => _ad.advertiserName;
   @override String get details => _ad.title;
+  @override String get category => 'Car Rent'; // Category for car rent
+  
+  @override String get addCategory => 'Car Rent'; // Dynamic category for API
   @override String get imageUrl => ImageUrlHelper.getMainImageUrl(_ad.mainImage ?? '');
   @override List<String> get images => [ ImageUrlHelper.getMainImageUrl(_ad.mainImage ?? ''), ...ImageUrlHelper.getThumbnailImageUrls(_ad.thumbnailImages) ].where((img) => img.isNotEmpty).toList();
   @override String get line1 => 'Day/Month Rent'; // تغيير من '' إلى قيمة غير فارغة

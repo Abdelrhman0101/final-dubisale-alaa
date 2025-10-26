@@ -1,5 +1,6 @@
 // lib/presentation/screens/other_services_details_screen.dart
 
+import 'package:advertising_app/data/model/other_service_model.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:advertising_app/data/model/other_service_ad_model.dart';
 import 'package:advertising_app/presentation/providers/other_services_details_provider.dart';
@@ -18,6 +19,9 @@ import 'package:advertising_app/utils/number_formatter.dart';
 import 'package:advertising_app/utils/phone_number_formatter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:advertising_app/presentation/widget/location_map.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 // تعريف الثوابت
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -33,12 +37,13 @@ class OtherServicesDetailsScreen extends StatefulWidget {
 }
 
 class _OtherServicesDetailsScreenState
-    extends State<OtherServicesDetailsScreen> {
+    extends State<OtherServicesDetailsScreen> with FavoritesHelper {
   // PageController is not needed as there is only one main image.
 
   @override
   void initState() {
     super.initState();
+    loadFavoriteIds();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<OtherServicesDetailsProvider>().fetchAdDetails(widget.adId);
     });
@@ -138,8 +143,16 @@ class _OtherServicesDetailsScreenState
                       top: 40.h,
                       left: isArabic ? 16.w : null,
                       right: isArabic ? null : 16.w,
-                      child: Icon(Icons.favorite_border,
-                          color: Colors.white, size: 30.sp)),
+                      child: buildFavoriteIcon(
+                        OtherServiceAdItemAdapter(ad),
+                        onAddToFavorite: () {
+                          // Add to favorites callback
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                          );
+                        },
+                        onRemoveFromFavorite: null, // No delete callback for details screen
+                      )),
                   Positioned(
                       top: 80.h,
                       left: isArabic ? 16.w : null,
@@ -410,5 +423,56 @@ class _OtherServicesDetailsScreenState
         child: Center(child: Icon(icon, color: Colors.white, size: 20.sp)),
       ),
     );
+  }
+}
+
+// Adapter class to make OtherServiceModel compatible with FavoriteItemInterface
+class OtherServiceAdItemAdapter implements FavoriteItemInterface {
+  final OtherServiceAdModel otherService;
+
+  OtherServiceAdItemAdapter(this.otherService);
+
+  @override
+  String get id => otherService.id.toString();
+
+  @override
+  String get title => otherService.title ?? '';
+
+  @override
+  String get location => otherService.location;
+
+  @override
+  String get price => otherService.price;
+
+  @override
+  String get line1 => otherService.line1;
+
+  @override
+  String get details => otherService.details;
+
+  @override
+  String get date => otherService.date;
+
+  @override
+  String get contact => otherService.contact;
+
+  @override
+  bool get isPremium => otherService.isPremium;
+
+  @override
+  List<String> get images => otherService.images;
+
+  @override
+  String get category => 'other_services';
+
+  @override
+  String get addCategory => 'Other Services';
+
+  @override
+  AdPriority get priority {
+    if (otherService.isPremium == true) {
+      return AdPriority.premium;
+    }
+    return AdPriority.free;
   }
 }

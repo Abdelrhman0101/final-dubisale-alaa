@@ -9,6 +9,7 @@ class CustomTextField extends StatefulWidget {
   final TextEditingController controller;
   final String? Function(String?)? validator;
   final TextInputType? keyboardType;
+  final Widget? prefixIcon;
 
   const CustomTextField({
     this.hintText,
@@ -18,6 +19,7 @@ class CustomTextField extends StatefulWidget {
     required this.controller,
     this.validator,
     this.keyboardType,
+    this.prefixIcon,
   });
 
   @override
@@ -53,6 +55,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
           fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
+        prefixIcon: widget.prefixIcon,
         suffixIcon: widget.isPassword
             ? IconButton(
                 icon: Icon(

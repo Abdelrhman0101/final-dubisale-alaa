@@ -9,6 +9,7 @@ import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:advertising_app/constant/image_url_helper.dart';
 
 class CarAdProvider with ChangeNotifier {
   final CarAdRepository _carAdRepository;
@@ -519,32 +520,199 @@ class CarAdProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateAd(Map<String, dynamic> adData, String adId) async {
+  Future<bool> updateAd(String adId, Map<String, dynamic> adData) async {
     _isUpdatingAd = true;
     _updateAdError = null;
     safeNotifyListeners();
 
     try {
-      // الاعتماد حصراً على auth_token
       final token = await FlutterSecureStorage().read(key: 'auth_token');
-      
-      final response = await _apiService.put(
-        '/api/car-ads/$adId',
-        data: adData,
+      final CarAdModel? before = _adDetails;
+
+      // Handle main image - check both possible key names
+      File? mainImageFile;
+      if (adData['mainImage'] is File) {
+        mainImageFile = adData['mainImage'] as File;
+      } else if (adData['main_image'] is File) {
+        mainImageFile = adData['main_image'] as File;
+      }
+
+      // Handle thumbnail images - check both possible key names
+      List<File>? thumbnailImages;
+      final thumbsData = adData['thumbnailImages'] ?? adData['thumbnail_images'];
+      if (thumbsData is List) {
+        final List<File> files = [];
+        
+        for (final thumb in thumbsData) {
+          if (thumb is File) {
+            files.add(thumb);
+          }
+        }
+        
+        if (files.isNotEmpty) {
+          thumbnailImages = files;
+        }
+      }
+
+      // Build form data payload with all fields
+      final Map<String, dynamic> formData = {
+        '_method': 'PUT', // Required for Laravel method spoofing
+        
+        // Basic fields
+        if (adData['title'] != null) 'title': adData['title'].toString(),
+        if (adData['description'] != null) 'description': adData['description'].toString(),
+        if (adData['make'] != null) 'make': adData['make'].toString(),
+        if (adData['model'] != null) 'model': adData['model'].toString(),
+        if (adData['trim'] != null) 'trim': adData['trim'].toString(),
+        if (adData['year'] != null) 'year': adData['year'].toString(),
+        if (adData['km'] != null) 'km': adData['km'].toString(),
+        if (adData['price'] != null) 'price': adData['price'].toString(),
+        if (adData['specs'] != null) 'specs': adData['specs'].toString(),
+        
+        // Car details
+        if (adData['car_type'] != null || adData['carType'] != null)
+          'car_type': (adData['car_type'] ?? adData['carType']).toString(),
+        if (adData['trans_type'] != null || adData['transType'] != null)
+          'trans_type': (adData['trans_type'] ?? adData['transType']).toString(),
+        if (adData['fuel_type'] != null || adData['fuelType'] != null)
+          'fuel_type': (adData['fuel_type'] ?? adData['fuelType']).toString(),
+        if (adData['color'] != null) 'color': adData['color'].toString(),
+        if (adData['interior_color'] != null || adData['interiorColor'] != null)
+          'interior_color': (adData['interior_color'] ?? adData['interiorColor']).toString(),
+        if (adData['warranty'] != null) 'warranty': adData['warranty'].toString(),
+        if (adData['engine_capacity'] != null || adData['engineCapacity'] != null)
+          'engine_capacity': (adData['engine_capacity'] ?? adData['engineCapacity']).toString(),
+        if (adData['cylinders'] != null) 'cylinders': adData['cylinders'].toString(),
+        if (adData['horsepower'] != null) 'horsepower': adData['horsepower'].toString(),
+        if (adData['doors_no'] != null || adData['doorsNo'] != null)
+          'doors_no': (adData['doors_no'] ?? adData['doorsNo']).toString(),
+        if (adData['seats_no'] != null || adData['seatsNo'] != null)
+          'seats_no': (adData['seats_no'] ?? adData['seatsNo']).toString(),
+        if (adData['steering_side'] != null || adData['steeringSide'] != null)
+          'steering_side': (adData['steering_side'] ?? adData['steeringSide']).toString(),
+        
+        // Contact information
+        if (adData['advertiser_name'] != null || adData['advertiserName'] != null)
+          'advertiser_name': (adData['advertiser_name'] ?? adData['advertiserName']).toString(),
+        if (adData['phone_number'] != null || adData['phoneNumber'] != null)
+          'phone_number': (adData['phone_number'] ?? adData['phoneNumber']).toString(),
+        if (adData['whatsapp'] != null) 'whatsapp': adData['whatsapp'].toString(),
+        
+        // Location
+        if (adData['emirate'] != null) 'emirate': adData['emirate'].toString(),
+        if (adData['selectedarea'] != null || adData['area'] != null)
+          'area': (adData['selectedarea'] ?? adData['area']).toString(),
+        if (adData['location'] != null || adData['advertiser_location'] != null || adData['advertiserLocation'] != null)
+          'location': (adData['location'] ?? adData['advertiser_location'] ?? adData['advertiserLocation']).toString(),
+        
+        // Plan details
+        if (adData['plan_type'] != null || adData['planType'] != null)
+          'plan_type': (adData['plan_type'] ?? adData['planType']).toString(),
+        if (adData['plan_days'] != null || adData['planDays'] != null)
+          'plan_days': (adData['plan_days'] ?? adData['planDays']).toString(),
+        if (adData['plan_expires_at'] != null || adData['planExpiresAt'] != null)
+          'plan_expires_at': (adData['plan_expires_at'] ?? adData['planExpiresAt']).toString(),
+      };
+
+      print('=== CarAdProvider.updateAd: POST with form-data ===');
+      print('Endpoint: /api/car-sales-ads/$adId');
+      print('Method: POST with _method=PUT');
+      print('Input data keys: ${adData.keys.toList()}');
+      print('Main image file: ${mainImageFile != null} (from key: ${adData['mainImage'] != null ? 'mainImage' : adData['main_image'] != null ? 'main_image' : 'none'})');
+      print('Thumbnail files count: ${thumbnailImages?.length ?? 0} (from key: ${adData['thumbnailImages'] != null ? 'thumbnailImages' : adData['thumbnail_images'] != null ? 'thumbnail_images' : 'none'})');
+      print('Form fields: ${formData.keys.toList()}');
+      print('===============================================');
+
+      // Always use POST with form-data and _method=PUT
+      final response = await _apiService.postFormData(
+        '/api/car-sales-ads/$adId',
+        data: formData,
+        mainImage: mainImageFile,
+        thumbnailImages: thumbnailImages,
         token: token,
       );
 
-      if (response['success'] == true) {
-        // Update the ad in the local list if it exists
-        final adIndex = _ads.indexWhere((ad) => ad.id == adId);
-        if (adIndex != -1) {
-          // Refresh the ads list to get updated data
-          await fetchCarAds();
-        }
-        return true;
-      } else {
-        throw Exception(response['message'] ?? 'Failed to update ad');
+      // Consider success if API returns success flag or id
+      final bool updated = (response is Map && (response['success'] == true || response.containsKey('id')));
+
+      // Fetch latest details and verify expected changes applied
+      await fetchAdDetails(int.tryParse(adId) ?? 0);
+      final CarAdModel? after = _adDetails;
+
+      List<String> unchangedFields = [];
+      String digitsOnly(String s) => s.replaceAll(RegExp(r'\D'), '');
+      bool equalsNormalized(String? a, String? b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.trim() == b.trim();
       }
+
+      if (after != null) {
+        // Check price
+        if (formData.containsKey('price')) {
+          final beforePrice = before?.price;
+          final afterPrice = after.price;
+          if (digitsOnly(beforePrice ?? '') == digitsOnly(afterPrice)) {
+            unchangedFields.add('price');
+          }
+        }
+        
+        // Check description
+        if (formData.containsKey('description')) {
+          final beforeDesc = before?.description;
+          final afterDesc = after.description;
+          if (!equalsNormalized(formData['description']?.toString(), afterDesc)) {
+            unchangedFields.add('description');
+          }
+        }
+        
+        // Check phone number
+        if (formData.containsKey('phone_number')) {
+          final afterPhone = after.phoneNumber;
+          if (!equalsNormalized(formData['phone_number']?.toString(), afterPhone)) {
+            unchangedFields.add('phone_number');
+          }
+        }
+        
+        // Check WhatsApp
+        if (formData.containsKey('whatsapp')) {
+          final afterWa = after.whatsapp;
+          if (!equalsNormalized(formData['whatsapp']?.toString(), afterWa)) {
+            unchangedFields.add('whatsapp');
+          }
+        }
+        
+        // Check main image (if file was uploaded)
+        if (mainImageFile != null) {
+          if (before != null && before.mainImage.isNotEmpty && after.mainImage == before.mainImage) {
+            unchangedFields.add('main_image');
+          }
+        }
+        
+        // Check thumbnail images (if files were uploaded)
+        if (thumbnailImages != null && thumbnailImages.isNotEmpty) {
+          final beforeThumbs = before?.thumbnailImages ?? [];
+          final afterThumbs = after.thumbnailImages ?? [];
+          if (beforeThumbs.length == afterThumbs.length && 
+              beforeThumbs.every((thumb) => afterThumbs.contains(thumb))) {
+            unchangedFields.add('thumbnail_images');
+          }
+        }
+      }
+
+      if (updated && unchangedFields.isEmpty) {
+        await fetchCarAds();
+        return true;
+      }
+
+      // Build error message
+      final List<String> hints = [];
+      hints.add('تأكد من أن جميع الحقول مرسلة بصيغة form-data مع _method=PUT');
+      hints.add('تحقق من صحة أرقام الهاتف والواتساب');
+      hints.add('تأكد من أن الصور بالصيغة المطلوبة');
+
+      _updateAdError = 'الطلب ${updated ? 'مقبول' : 'مرفوض'} لكن لم تُحدّث الحقول: ${unchangedFields.join(', ')}. الأسباب المحتملة: ${hints.join(' | ')}';
+      return false;
     } catch (e) {
       _updateAdError = e.toString();
       return false;
@@ -560,24 +728,143 @@ class CarAdProvider with ChangeNotifier {
     safeNotifyListeners();
 
     try {
-      // الاعتماد حصراً على auth_token
       final token = await FlutterSecureStorage().read(key: 'auth_token');
-      
-      final response = await _apiService.post(
-        '/api/car-ads',
-        data: adData,
+
+      // Normalize and validate payload (camelCase -> snake_case, clean numeric fields)
+      String? cleanEngineCapacity(dynamic v) {
+        if (v == null) return null;
+        final s = v.toString().replaceAll('L', '').trim();
+        return s.isEmpty ? null : s;
+      }
+      String? digitsOnly(dynamic v) {
+        if (v == null) return null;
+        final m = RegExp(r'\d+').firstMatch(v.toString());
+        return m?.group(0);
+      }
+      String? firstNumber(dynamic v) {
+        if (v == null) return null;
+        final s = v.toString();
+        if (s.contains('-')) {
+          final m = RegExp(r'\d+').firstMatch(s.split('-').first);
+          return m?.group(0);
+        }
+        return RegExp(r'\d+').firstMatch(s)?.group(0);
+      }
+      String warrantyToApi(dynamic v) {
+        return (v == true || (v is String && (v == 'true' || v == '1'))) ? '1' : '0';
+      }
+
+      final Map<String, String> camelToSnake = {
+        'carType': 'car_type',
+        'transType': 'trans_type',
+        'fuelType': 'fuel_type',
+        'interiorColor': 'interior_color',
+        'engineCapacity': 'engine_capacity',
+        'cylinders': 'cylinders',
+        'horsepower': 'horsepower',
+        'doorsNo': 'doors_no',
+        'seatsNo': 'seats_no',
+        'steeringSide': 'steering_side',
+        'phoneNumber': 'phone_number',
+        'advertiserName': 'advertiser_name',
+        'advertiserType': 'advertiser_type',
+        'planType': 'plan_type',
+        'planDays': 'plan_days',
+        'planExpiresAt': 'plan_expires_at',
+        'advertiserLocation': 'location',
+      };
+
+      final Map<String, dynamic> textData = {
+        'title': adData['title'],
+        'description': adData['description'],
+        'make': adData['make'],
+        'model': adData['model'],
+        'trim': adData['trim'],
+        'year': adData['year'],
+        'km': adData['km'],
+        'price': adData['price'],
+        'specs': adData['specs'],
+        'car_type': adData['car_type'] ?? adData['carType'],
+        'trans_type': adData['trans_type'] ?? adData['transType'],
+        'fuel_type': adData['fuel_type'] ?? adData['fuelType'],
+        'color': adData['color'],
+        'interior_color': adData['interior_color'] ?? adData['interiorColor'],
+        'warranty': warrantyToApi(adData['warranty']),
+        'engine_capacity': cleanEngineCapacity(adData['engineCapacity']),
+        'cylinders': digitsOnly(adData['cylinders']),
+        'horsepower': firstNumber(adData['horsepower']),
+        'doors_no': digitsOnly(adData['doorsNo']),
+        'seats_no': digitsOnly(adData['seatsNo']),
+        'steering_side': adData['steering_side'] ?? adData['steeringSide'],
+        'advertiser_name': adData['advertiser_name'] ?? adData['advertiserName'],
+        'phone_number': adData['phone_number'] ?? adData['phoneNumber'],
+        'whatsapp': adData['whatsapp'],
+        'emirate': adData['emirate'],
+        'area': adData['area'],
+        'advertiser_type': adData['advertiser_type'] ?? adData['advertiserType'],
+        'location': adData['location'] ?? adData['advertiser_location'] ?? adData['advertiserLocation'],
+        'plan_type': adData['plan_type'] ?? adData['planType'],
+        'plan_days': adData['plan_days'] ?? adData['planDays'],
+        'plan_expires_at': adData['plan_expires_at'] ?? adData['planExpiresAt'],
+      };
+
+      final File? mainImage = adData['mainImage'] as File?;
+      final List<File>? thumbnailImages = adData['thumbnailImages'] as List<File>?;
+
+      // Diagnostics: compare client vs server payload
+      final List<String> mismatches = [];
+      camelToSnake.forEach((camel, snake) {
+        final camelPresent = adData.containsKey(camel);
+        final snakePresent = adData.containsKey(snake);
+        if (camelPresent && !snakePresent) {
+          mismatches.add('$camel -> should be $snake');
+        }
+      });
+      if (mainImage == null) {
+        mismatches.add('mainImage is missing (required for car ad)');
+      }
+      if (adData['thumbnailImages'] != null && thumbnailImages == null) {
+        mismatches.add('thumbnailImages must be List<File>');
+      }
+
+      print('=== Client vs Server payload comparison ===');
+      print('Endpoint client: /api/car-sales-ads');
+      print('Files: mainImage: ${mainImage != null ? 'File' : 'null'}, thumbnails: ${thumbnailImages?.length ?? 0}');
+      print('Client keys (sample): ${adData.keys.take(8).toList()} ...');
+      print('Server expected keys (sample): ${textData.keys.take(8).toList()} ...');
+      if (mismatches.isNotEmpty) {
+        print('Mismatched/missing keys: ${mismatches.join(', ')}');
+      } else {
+        print('No key mismatches detected');
+      }
+      print('=================================================');
+
+      final response = await _apiService.postFormData(
+        '/api/car-sales-ads',
+        data: textData,
+        mainImage: mainImage,
+        thumbnailImages: thumbnailImages,
         token: token,
       );
 
-      if (response['success'] == true) {
-        // Refresh the ads list to include the new ad
-        await fetchCarAds();
-        return true;
-      } else {
-        throw Exception(response['message'] ?? 'Failed to submit ad');
+      if (response is Map) {
+        final bool isSuccessFlag = response['success'] == true;
+        final bool hasId = response.containsKey('id');
+        final bool created = isSuccessFlag || hasId;
+        if (created) {
+          await fetchCarAds();
+          return true;
+        }
       }
+      final message = (response is Map) ? (response['message'] ?? 'Failed to submit ad') : 'Failed to submit ad';
+      throw Exception(message);
     } catch (e) {
       _submitAdError = e.toString();
+      // Extra diagnostics for JSON-vs-File issues
+      print('=== Submit Car Ad Error ===');
+      print('Error: $e');
+      print('Hint: Ensure files are sent with multipart/form-data and no File objects are included in JSON payload.');
+      print('================================');
       return false;
     } finally {
       _isSubmittingAd = false;
@@ -638,23 +925,7 @@ class CarAdProvider with ChangeNotifier {
       offerPriceFrom,
       offerPriceTo;
 
-  // +++ أضف هذه الدالة الجديدة +++
-  // Future<void> fetchOfferAds() async {
-  //   _isLoadingOffers = true;
-  //   _offersError = null;
-  //   notifyListeners();
-  //   try {
-  //     final token = await const FlutterSecureStorage().read(key: 'auth_token');
-  //     if (token == null) throw Exception('Token not found');
-  //     _offerAds = await _carAdRepository.getOfferAds(token: token);
-  //   } catch (e) {
-  //     _offersError = e.toString();
-  //     if (kDebugMode) print("Error fetching offer ads: $e");
-  //   } finally {
-  //     _isLoadingOffers = false;
-  //     notifyListeners();
-  //   }
-  // }
+  
 
   Future<void> fetchOfferAds() async {
     _isLoadingOffers = true;

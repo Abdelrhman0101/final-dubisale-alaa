@@ -5,17 +5,178 @@ import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'package:provider/provider.dart';
+import 'package:advertising_app/presentation/providers/electronic_details_provider.dart';
+import 'package:advertising_app/data/model/electronics_ad_model.dart';
+import 'package:advertising_app/data/web_services/api_service.dart';
+import 'package:advertising_app/data/repository/electronics_repository.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
 const Color KPrimaryColor = Color.fromRGBO(1, 84, 126, 1);
 
-class ElectronicsSaveAdScreen extends StatelessWidget {
-  // استقبال دالة تغيير اللغة
+class ElectronicsSaveAdScreen extends StatefulWidget {
+  // استقبال دالة تغيير اللغة و معرف الإعلان
   final Function(Locale) onLanguageChange;
+  final int adId;
 
-  const ElectronicsSaveAdScreen({Key? key, required this.onLanguageChange})
+  const ElectronicsSaveAdScreen({Key? key, required this.onLanguageChange, required this.adId})
       : super(key: key);
+
+  @override
+  _ElectronicsSaveAdScreenState createState() => _ElectronicsSaveAdScreenState();
+}
+
+class _ElectronicsSaveAdScreenState extends State<ElectronicsSaveAdScreen> {
+  // Controllers for editable fields
+  late TextEditingController _priceController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _phoneController;
+  late TextEditingController _whatsappController;
+  
+  // Image handling variables
+  File? _mainImageFile;
+  final List<File> _thumbnailImageFiles = [];
+  final ImagePicker _picker = ImagePicker();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  
+  bool _isLoading = false;
+  bool _isUpdating = false;
+  ElectronicAdModel? _adData;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceController = TextEditingController();
+    _descriptionController = TextEditingController();
+    _phoneController = TextEditingController();
+    _whatsappController = TextEditingController();
+    _loadAdData();
+  }
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    _descriptionController.dispose();
+    _phoneController.dispose();
+    _whatsappController.dispose();
+    super.dispose();
+  }
+
+  void _loadAdData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final provider = Provider.of<ElectronicDetailsProvider>(context, listen: false);
+      await provider.fetchAdDetails(widget.adId);
+      
+      if (provider.adDetails != null) {
+        _adData = provider.adDetails;
+        _populateControllers();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading ad data: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _populateControllers() {
+    if (_adData != null) {
+      _priceController.text = _adData!.price ?? '';
+      _descriptionController.text = _adData!.description ?? '';
+      _phoneController.text = _adData!.phoneNumber ?? '';
+      _whatsappController.text = _adData!.whatsappNumber ?? '';
+    }
+  }
+
+  // Image picker methods
+  Future<void> _pickMainImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() => _mainImageFile = File(image.path));
+    }
+  }
+
+  Future<void> _pickThumbnailImages() async {
+    final List<XFile> images = await _picker.pickMultiImage();
+    if (images.isNotEmpty) {
+      // حساب العدد الحالي للصور المختارة
+      int currentCount = _thumbnailImageFiles.length;
+      int availableSlots = 19 - currentCount;
+      
+      List<File> newImages = images.map((xfile) => File(xfile.path)).toList();
+      
+      // إذا كان العدد الجديد يتجاوز الحد المسموح
+      if (newImages.length > availableSlots) {
+        // أخذ فقط العدد المسموح به
+        newImages = newImages.take(availableSlots).toList();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم اختيار ${newImages.length} صورة فقط. الحد الأقصى هو 19 صورة إجمالية'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      
+      setState(() {
+        _thumbnailImageFiles.addAll(newImages);
+      });
+    }
+  }
+
+  Future<void> _saveAd() async {
+    if (_adData == null) return;
+
+    setState(() {
+      _isUpdating = true;
+    });
+
+    try {
+      // Get token from secure storage
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null) {
+        throw Exception('Authentication token not found');
+      }
+
+      final repository = ElectronicsRepository(ApiService());
+      
+      await repository.updateElectronicsAd(
+        adId: widget.adId,
+        token: token,
+        price: _priceController.text,
+        description: _descriptionController.text,
+        phoneNumber: _phoneController.text,
+        whatsappNumber: _whatsappController.text.isNotEmpty ? _whatsappController.text : null,
+        mainImage: _mainImageFile,
+        thumbnailImages: _thumbnailImageFiles.isNotEmpty ? _thumbnailImageFiles : null,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ad updated successfully')),
+      );
+      
+      context.pop();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating ad: $e')),
+      );
+    } finally {
+      setState(() {
+        _isUpdating = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,10 +185,36 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
     final currentLocale = Localizations.localeOf(context).languageCode;
     final Color borderColor = Color.fromRGBO(8, 194, 201, 1);
     
-    // قيم وهمية للحقول
-    const emirateValue = 'Dubai';
-    const districtValue = 'Deira';
-    const sectionTypeValue = 'Mobiles';
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(color: KPrimaryColor),
+        ),
+      );
+    }
+
+    if (_adData == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text('Failed to load ad data', style: TextStyle(fontSize: 16, color: Colors.grey)),
+              SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadAdData,
+                child: Text('Retry'),
+                style: ElevatedButton.styleFrom(backgroundColor: KPrimaryColor),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -76,48 +263,86 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
               SizedBox(height: 10.h),
               
               _buildFormRow([
-                _buildTitledDropdownField(
-                    context, s.emirate, ['Dubai', 'Abu Dhabi'], emirateValue, borderColor),
-                _buildTitledDropdownField(
-                    context, s.district, ['Deira', 'Al Barsha'], districtValue, borderColor),
+                _buildReadOnlyField(s.emirate, _adData!.emirate ?? 'N/A', borderColor),
+                _buildReadOnlyField(s.district, _adData!.district ?? 'N/A', borderColor),
               ]),
               const SizedBox(height: 7),
 
               _buildFormRow([
-                _buildTitledTextField(
-                    s.area, 'Souq Gawa', borderColor, currentLocale),
-                _buildTitledTextField(
-                    s.price, 'AED 3500', borderColor, currentLocale, isNumber: true),
+                _buildReadOnlyField(s.area, _adData!.area ?? 'N/A', borderColor),
+                _buildEditableTextField(s.price, _priceController, borderColor, currentLocale, isNumber: true),
               ]),
               const SizedBox(height: 7),
 
               _buildFormRow([
-                _buildTitledTextField(
-                    s.productName, 'iPhone 17', borderColor, currentLocale),
-                _buildTitledDropdownField(
-                    context, s.sectionType, ['Mobiles', 'Laptops'], sectionTypeValue, borderColor),
+                _buildReadOnlyField(s.productName, _adData!.productName ?? 'N/A', borderColor),
+                _buildReadOnlyField(s.sectionType, _adData!.sectionType ?? 'N/A', borderColor),
               ]),
               const SizedBox(height: 7),
 
-              _buildTitleBox(context, s.title, 'New Brand Limited Edition', borderColor, currentLocale),
+              _buildReadOnlyTitleBox(s.title, _adData!.title ?? 'N/A', borderColor),
               const SizedBox(height: 7),
 
-              TitledTextFieldWithAction(title: s.advertiserName, initialValue: 'Sharaf DG', borderColor: borderColor, onAddPressed: (){ print("Advertiser Add clicked"); }),
+              _buildReadOnlyField(s.advertiserName, _adData!.advertiserName ?? 'N/A', borderColor),
               const SizedBox(height: 7),
 
               _buildFormRow([
-                TitledTextFieldWithAction(title: s.phoneNumber, initialValue: '0097708236561', borderColor: borderColor, onAddPressed: (){ print("Phone Add clicked"); }, isNumeric: true),
-                TitledTextFieldWithAction(title: s.whatsApp, initialValue: '0097708236561', borderColor: borderColor, onAddPressed: (){ print("WhatsApp Add clicked"); }, isNumeric: true),
+                _buildEditablePhoneField(s.phoneNumber, _phoneController, borderColor),
+                _buildEditablePhoneField(s.whatsApp, _whatsappController, borderColor),
               ]),
               const SizedBox(height: 7),
 
-              TitledDescriptionBox(title: s.description, initialValue: 'Many Mobiles Offer And Tablets And All Kind Of Electronics', borderColor: borderColor),
+              _buildEditableDescriptionBox(s.description, _descriptionController, borderColor),
               const SizedBox(height: 10),
 
-              _buildImageButton(s.addMainImage, Icons.add_a_photo_outlined, borderColor),
+              // التعامل مع الصور
+              _buildImageButton(s.addMainImage, Icons.add_a_photo_outlined, borderColor, onPressed: _pickMainImage),
+              if(_mainImageFile != null) ...[
+                const SizedBox(height: 4), 
+                Text('  تم اختيار صورة رئيسية جديدة', style: TextStyle(color: Colors.green)),
+                const SizedBox(height: 8),
+                Container(
+                  height: 100,
+                  width: 100,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(_mainImageFile!, fit: BoxFit.cover),
+                  ),
+                ),
+              ],
               const SizedBox(height: 7),
-              _buildImageButton(s.add4Images, Icons.add_photo_alternate_outlined, borderColor),
-              const SizedBox(height: 7),
+              _buildImageButton(s.add4Images, Icons.add_photo_alternate_outlined, borderColor, onPressed: _pickThumbnailImages),
+              if(_thumbnailImageFiles.isNotEmpty) ...[
+                const SizedBox(height: 4), 
+                Text('  تم اختيار ${_thumbnailImageFiles.length} صورة مصغرة جديدة', style: TextStyle(color: Colors.green)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 100,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _thumbnailImageFiles.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(_thumbnailImageFiles[index], fit: BoxFit.cover),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
 
               // قسم الموقع
               Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
@@ -130,7 +355,7 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
                     SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h),
                     SizedBox(width: 8.w),
                     Expanded(
-                      child: Text('Dubai Deira', style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)),
+                      child: Text(_adData!.addres.toString(), style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)),
                     ),
                   ],
                 ),
@@ -142,12 +367,26 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    context.push('/electronics_save_ads');
-                  },
-                  child: Text(s.save, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+                  onPressed: _isUpdating ? null : _saveAd,
+                  child: _isUpdating 
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text('Updating...', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+                        ],
+                      )
+                    : Text(s.save, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: KPrimaryColor,
+                    backgroundColor: _isUpdating ? Colors.grey : KPrimaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -162,18 +401,55 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
 
   // --- دوال المساعدة المحدثة ---
 
+  String _getAdLocation() {
+    if (_adData == null) return 'N/A';
+    
+    List<String> locationParts = [];
+    if (_adData!.emirate != null && _adData!.emirate!.isNotEmpty) {
+      locationParts.add(_adData!.emirate!);
+    }
+    if (_adData!.district != null && _adData!.district!.isNotEmpty) {
+      locationParts.add(_adData!.district!);
+    }
+    if (_adData!.area != null && _adData!.area!.isNotEmpty) {
+      locationParts.add(_adData!.area!);
+    }
+    
+    return locationParts.isNotEmpty ? locationParts.join(' - ') : 'N/A';
+  }
+
   Widget _buildFormRow(List<Widget> children) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children.map((child) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4.0), child: child))).toList());
   }
 
-  Widget _buildTitledTextField(String title, String initialValue,
+  Widget _buildReadOnlyField(String title, String value, Color borderColor) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
+      const SizedBox(height: 4),
+      Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: borderColor),
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey[100],
+        ),
+        child: Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey[600], fontSize: 12.sp),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildEditableTextField(String title, TextEditingController controller,
       Color borderColor, String currentLocale,
       {bool isNumber = false}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
       const SizedBox(height: 4),
       TextFormField(
-          initialValue: initialValue,
+          controller: controller,
           style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
           textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
           keyboardType: isNumber ? TextInputType.number : TextInputType.text,
@@ -187,68 +463,113 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
     ]);
   }
 
-  Widget _buildTitledDropdownField(
-      BuildContext context, String title, List<String> items, String? value, Color borderColor,
-      {double? titleFontSize}) {
-    final s = S.of(context);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: titleFontSize ?? 14.sp)),
-      const SizedBox(height: 4),
-      DropdownSearch<String>(
-          filterFn: (item, filter) => item.toLowerCase().startsWith(filter.toLowerCase()),
-          popupProps: PopupProps.menu(
-              menuProps: MenuProps(backgroundColor: Colors.white, borderRadius: BorderRadius.circular(8)),
-              itemBuilder: (context, item, isSelected) => Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Text(item, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: KTextColor))),
-              showSearchBox: true,
-              searchFieldProps: TextFieldProps(
-                  cursorColor: KPrimaryColor,
-                  style: TextStyle(color: KTextColor, fontSize: 14),
-                  decoration: InputDecoration(
-                      hintText: s.search,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)))),
-              emptyBuilder: (context, searchEntry) => Center(child: Text(s.noResultsFound, style: TextStyle(fontSize: 14, color: KTextColor)))),
-          items: items,
-          selectedItem: value,
-          dropdownDecoratorProps: DropDownDecoratorProps(
-              baseStyle: TextStyle(fontWeight: FontWeight.w400, color: KTextColor, fontSize: 12.sp),
-              dropdownSearchDecoration: InputDecoration(
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  fillColor: Colors.white,
-                  filled: true)),
-          onChanged: (val) {})
-    ]);
-  }
-  
-  Widget _buildTitleBox(BuildContext context, String title, String initialValue,
-      Color borderColor, String currentLocale) {
+  Widget _buildReadOnlyTitleBox(String title, String value, Color borderColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
         const SizedBox(height: 4),
-        TextFormField(
-          initialValue: initialValue,
-          maxLines: null,
-          style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp),
-          textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-            contentPadding: EdgeInsets.all(12),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey[100],
+          ),
+          child: Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey[600], fontSize: 14.sp),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildImageButton(String title, IconData icon, Color borderColor) {
-    return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: () {}, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)))));
+  Widget _buildEditablePhoneField(String title, TextEditingController controller, Color borderColor) {
+    final s = S.of(context);
+    final addButtonWidth = (s.add.length * 8.0) + 24.0;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
+        const SizedBox(height: 4),
+        Stack(
+          alignment: Alignment.centerRight,
+          children: [
+            TextFormField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
+              decoration: InputDecoration(
+                contentPadding: EdgeInsets.only(left: 16, right: addButtonWidth, top: 12, bottom: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
+                fillColor: Colors.white, filled: true,
+              ),
+            ),
+            Positioned(
+              right: 1, top: 1, bottom: 1,
+              child: GestureDetector(
+                onTap: () {
+                  // Handle add functionality for phone numbers
+                  print("${title} Add clicked");
+                },
+                child: Container(
+                  width: addButtonWidth - 10,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: KPrimaryColor, borderRadius: BorderRadius.only(topRight: Radius.circular(7), bottomRight: Radius.circular(7))),
+                  child: Text(s.add, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditableDescriptionBox(String title, TextEditingController controller, Color borderColor) {
+    const int maxLength = 5000;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
+        const SizedBox(height: 4),
+        Container(
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: borderColor)),
+          child: Column(
+            children: [
+              TextFormField(
+                controller: controller,
+                maxLines: null,
+                maxLength: maxLength,
+                style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp),
+                decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.all(12), counterText: ""),
+                onChanged: (value) {
+                  setState(() {}); // Rebuild to update character count
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0, bottom: 8.0),
+                child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: Text('${controller.text.length}/$maxLength', style: TextStyle(color: Colors.grey, fontSize: 12), textDirection: TextDirection.ltr)),
+              )
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+
+
+  Widget _buildImageButton(String title, IconData icon, Color borderColor, {required VoidCallback onPressed}) {
+    return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: onPressed, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)))));
   }
 
   Widget _buildMapSection(BuildContext context) {
@@ -274,120 +595,5 @@ class ElectronicsSaveAdScreen extends StatelessWidget {
             ),
           ],
         ));
-  }
-}
-
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// ++++    الودجت المخصصة المأخوذة من الملف المرجعي          ++++
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-class TitledTextFieldWithAction extends StatefulWidget {
-  final String title;
-  final String initialValue;
-  final Color borderColor;
-  final bool isNumeric;
-  final VoidCallback onAddPressed;
-  const TitledTextFieldWithAction({Key? key, required this.title, required this.initialValue, required this.borderColor, required this.onAddPressed, this.isNumeric = false}) : super(key: key);
-  @override
-  _TitledTextFieldWithActionState createState() => _TitledTextFieldWithActionState();
-}
-class _TitledTextFieldWithActionState extends State<TitledTextFieldWithAction> {
-  late FocusNode _focusNode;
-  @override
-  void initState() { super.initState(); _focusNode = FocusNode(); }
-  @override
-  void dispose() { _focusNode.dispose(); super.dispose(); }
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final addButtonWidth = (s.add.length * 8.0) + 24.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(widget.title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
-        const SizedBox(height: 4),
-        Stack(
-          alignment: Alignment.centerRight,
-          children: [
-            TextFormField(
-              focusNode: _focusNode,
-              initialValue: widget.initialValue,
-              keyboardType: widget.isNumeric ? TextInputType.number : TextInputType.text,
-              style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.only(left: 16, right: addButtonWidth, top: 12, bottom: 12),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: widget.borderColor)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: widget.borderColor)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-                fillColor: Colors.white, filled: true,
-              ),
-            ),
-            Positioned(
-              right: 1, top: 1, bottom: 1,
-              child: GestureDetector(
-                onTap: () { widget.onAddPressed(); _focusNode.requestFocus(); },
-                child: Container(
-                  width: addButtonWidth - 10,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: KPrimaryColor, borderRadius: BorderRadius.only(topRight: Radius.circular(7), bottomRight: Radius.circular(7))),
-                  child: Text(s.add, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class TitledDescriptionBox extends StatefulWidget {
-  final String title;
-  final String initialValue;
-  final Color borderColor;
-  final int maxLength;
-  const TitledDescriptionBox({Key? key, required this.title, required this.initialValue, required this.borderColor, this.maxLength = 5000}) : super(key: key);
-  @override
-  State<TitledDescriptionBox> createState() => _TitledDescriptionBoxState();
-}
-class _TitledDescriptionBoxState extends State<TitledDescriptionBox> {
-  late TextEditingController _controller;
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue);
-    _controller.addListener(() { setState(() {}); });
-  }
-  @override
-  void dispose() { _controller.dispose(); super.dispose(); }
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(widget.title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
-        const SizedBox(height: 4),
-        Container(
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: widget.borderColor)),
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _controller,
-                maxLines: null,
-                maxLength: widget.maxLength,
-                style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp),
-                decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.all(12), counterText: ""),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0, bottom: 8.0),
-                child: Align(
-                    alignment: Alignment.bottomRight,
-                    child: Text('${_controller.text.length}/${widget.maxLength}', style: TextStyle(color: Colors.grey, fontSize: 12), textDirection: TextDirection.ltr)),
-              )
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }

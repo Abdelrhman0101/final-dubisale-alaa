@@ -97,7 +97,7 @@ class OtherServicesInfoProvider extends ChangeNotifier {
   }
 
   // إضافة دالة لجلب أفضل المعلنين
-  Future<List<Map<String, dynamic>>> getBestDealers({String? token}) async {
+  Future<List<Map<String, dynamic>>> getBestDealers() async {
     try {
       final response = await _apiService.get('/api/best-advertisers/other_services', );
       if (response is List) {

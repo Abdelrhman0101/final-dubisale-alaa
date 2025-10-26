@@ -1,6 +1,8 @@
 // lib/presentation/screens/electronics_ad_screen.dart
 
 import 'dart:io';
+import 'package:advertising_app/presentation/providers/auth_repository.dart';
+import 'package:advertising_app/presentation/providers/electronics_ad_post_provider.dart';
 import 'package:advertising_app/presentation/providers/electronics_info_provider.dart';
 import 'package:advertising_app/presentation/providers/google_maps_provider.dart';
 import 'package:advertising_app/utils/phone_number_formatter.dart';
@@ -15,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geocoding/geocoding.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -31,8 +34,8 @@ class ElectronicsAdScreen extends StatefulWidget {
 class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
   // --- Controllers & Keys ---
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _titleController = TextEditingController(text: 'New Brand Limited Edition');
-  final TextEditingController _descriptionController = TextEditingController(text: 'Many Mobiles Offer And Tablets And All Kind Of Electronics');
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _areaController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _productNameController = TextEditingController();
@@ -60,9 +63,181 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final token = await const FlutterSecureStorage().read(key: 'auth_token');
       if (token != null && mounted) {
-        context.read<ElectronicsInfoProvider>().fetchAllData(token: token);
+        context.read<ElectronicsInfoProvider>().fetchAllData(token: token, includeContactInfo: true);
+        await _loadSavedLocation();
+        if (selectedLocation.isNotEmpty && selectedLatLng == null) {
+          try {
+            final results = await locationFromAddress(selectedLocation);
+            if (results.isNotEmpty) {
+              final first = results.first;
+              if (!mounted) return;
+              setState(() {
+                selectedLatLng = LatLng(first.latitude, first.longitude);
+              });
+              final mapsProvider = context.read<GoogleMapsProvider>();
+              await mapsProvider.moveCameraToLocation(first.latitude, first.longitude, zoom: 14.0);
+            }
+          } catch (e) {
+            debugPrint('Geocoding failed: $e');
+          }
+        }
+        // Check user profile and set default location + alert if incomplete
+        final authProvider = context.read<AuthProvider>();
+        await _checkUserProfileData(authProvider);
       }
     });
+  }
+
+  Future<void> _checkUserProfileData(AuthProvider authProvider) async {
+    if (authProvider.user == null) {
+      await authProvider.fetchUserProfile();
+    }
+    final user = authProvider.user;
+    if (user == null) return;
+
+    if (user.advertiserLocation != null && user.advertiserLocation!.trim().isNotEmpty) {
+      setState(() {
+        // Use advertiser saved location from contact info
+        selectedLocation = user.advertiserLocation!;
+      });
+    }
+
+    List<String> missingFields = [];
+    if (user.phone.trim().isEmpty) {
+      missingFields.add('phone number');
+    }
+    if ((user.advertiserLocation == null || user.advertiserLocation!.trim().isEmpty) && (user.latitude == null || user.longitude == null)) {
+      missingFields.add('your location');
+    }
+
+    if (missingFields.isNotEmpty && mounted) {
+      _showProfileIncompleteDialog(missingFields);
+    }
+  }
+
+  void _showProfileIncompleteDialog(List<String> missingFields) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return WillPopScope(
+          onWillPop: () async {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop();
+            return false;
+          },
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              "Incomplete profile",
+              style: TextStyle(fontWeight: FontWeight.bold, color: KTextColor, fontSize: 18),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'You must complete the following fields in your profile before adding the advertisement:',
+                  style: TextStyle(fontSize: 16, color: KTextColor),
+                ),
+                const SizedBox(height: 8),
+                ...missingFields.map((f) => Row(children: [const Icon(Icons.warning_amber_rounded, color: Colors.orange), const SizedBox(width: 8), Text(f, style: const TextStyle(color: KTextColor))])),
+              ],
+            ),
+            actions: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.push('/profile');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Go to profile',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _loadSavedLocation() async {
+    try {
+      final storage = const FlutterSecureStorage();
+      String? latStr = await storage.read(key: 'saved_latitude');
+      String? lngStr = await storage.read(key: 'saved_longitude');
+      String? addrStr = await storage.read(key: 'saved_address');
+
+      if (latStr == null || lngStr == null || addrStr == null) {
+        final userLat = await storage.read(key: 'user_latitude');
+        final userLng = await storage.read(key: 'user_longitude');
+        final userAddr = await storage.read(key: 'user_address');
+        latStr ??= userLat;
+        lngStr ??= userLng;
+        addrStr ??= userAddr;
+      }
+
+      if (latStr != null && lngStr != null && addrStr != null) {
+        final lat = double.tryParse(latStr);
+        final lng = double.tryParse(lngStr);
+        if (lat != null && lng != null) {
+          if (!mounted) return;
+          setState(() {
+            selectedLatLng = LatLng(lat, lng);
+            selectedLocation = addrStr!;
+          });
+          final mapsProvider = context.read<GoogleMapsProvider>();
+          await mapsProvider.moveCameraToLocation(lat, lng, zoom: 16.0);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading saved location: $e');
+    }
   }
 
   @override
@@ -102,27 +277,94 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
     setState(() => _thumbnailImages.removeAt(index));
   }
 
-  Future<void> _getCurrentLocation() async { /* ... same as other screens ... */ }
-  Future<void> _navigateToLocationPicker() async { /* ... same as other screens ... */ }
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLoadingLocation = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('جاري تحديد الموقع...'),
+        backgroundColor: KPrimaryColor,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final mapsProvider = context.read<GoogleMapsProvider>();
+      await mapsProvider.getCurrentLocation();
+
+      if (mapsProvider.currentLocationData != null) {
+        final locationData = mapsProvider.currentLocationData!;
+        final latLng = LatLng(locationData.latitude!, locationData.longitude!);
+
+        await mapsProvider.moveCameraToLocation(latLng.latitude, latLng.longitude, zoom: 16.0);
+        final address = await mapsProvider.getAddressFromCoordinates(latLng.latitude, latLng.longitude);
+
+        setState(() {
+          selectedLatLng = latLng;
+          if (address != null) selectedLocation = address;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تحديد الموقع بنجاح'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل في تحديد الموقع: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoadingLocation = false);
+    }
+  }
+
+  Future<void> _navigateToLocationPicker() async {
+    try {
+      double? initialLat = selectedLatLng?.latitude;
+      double? initialLng = selectedLatLng?.longitude;
+      String? initialAddress = selectedLocation.isNotEmpty ? selectedLocation : null;
+
+      String route = '/location_picker';
+      if (initialLat != null && initialLng != null) {
+        route += '?lat=$initialLat&lng=$initialLng';
+        if (initialAddress != null && initialAddress.isNotEmpty) {
+          route += '&address=${Uri.encodeComponent(initialAddress)}';
+        }
+      }
+
+      final result = await context.push(route);
+      if (result != null && result is Map<String, dynamic>) {
+        final LatLng? location = result['location'] as LatLng?;
+        final String? address = result['address'] as String?;
+        if (location != null) {
+          setState(() {
+            selectedLatLng = location;
+            if (address != null && address.isNotEmpty) {
+              selectedLocation = address;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking location: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
 
   Future<void> _validateAndProceedToNext() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all required fields.'), backgroundColor: Colors.orange));
       return;
     }
-     if (_mainImage == null) {
+    if (_mainImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add a main image.'), backgroundColor: Colors.orange));
       return;
     }
-    if (selectedLocation.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a location on the map.'), backgroundColor: Colors.orange));
-        return;
-    }
+    // السماح بالإرسال بدون موقع: لا نفرض selectedLocation
 
     final infoProvider = context.read<ElectronicsInfoProvider>();
-    
+
     final Map<String, dynamic> adData = {
-      'adType': 'electronics', // ++ تم التأكد من القيمة الصحيحة هنا
+      'adType': 'electronics',
       'emirate': infoProvider.getEmirateNameFromDisplayName(selectedEmirate),
       'district': selectedDistrict,
       'area': _areaController.text,
@@ -134,13 +376,16 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
       'phone_number': PhoneNumberFormatter.formatForApi(selectedPhoneNumber!),
       'whatsapp_number': selectedWhatsAppNumber != null && selectedWhatsAppNumber!.isNotEmpty ? PhoneNumberFormatter.formatForApi(selectedWhatsAppNumber!) : null,
       'description': _descriptionController.text,
-      'address': selectedLocation,
+      'address': selectedLocation, // قد يكون فارغًا
       'mainImage': _mainImage,
       'thumbnailImages': _thumbnailImages,
     };
-    
+
+    // الانتقال إلى صفحة اختيار الخطة وتمرير البيانات
     context.push('/placeAnAd', extra: adData);
   }
+
+  // Submission moved to plan selection page: place_an_ad.dart
 
   @override
   Widget build(BuildContext context) {
@@ -186,8 +431,8 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
                       _buildSingleSelectField(context, s.sectionType, selectedSectionType, infoProvider.sectionTypes, (selection) => setState(() => selectedSectionType = selection), isRequired: true),
                     ]),
                     const SizedBox(height: 7),
-                    _buildTitledTextFormField(s.title, _titleController, borderColor, currentLocale, minLines: 2, isRequired: true),
-                    const SizedBox(height: 7),
+                    _buildTitledTextFormField(s.title, _titleController, borderColor, currentLocale, hintText: 'Enter your title', minLines: 2, isRequired: true),
+                    const SizedBox(height: 4),
                     TitledSelectOrAddField(
                       title: s.advertiserName, value: selectedAdvertiserName, items: infoProvider.advertiserNames,
                       onChanged: (newValue) => setState(() => selectedAdvertiserName = newValue),
@@ -209,7 +454,7 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
                     const SizedBox(height: 7),
                     Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
                     SizedBox(height: 4.h),
-                    Directionality(textDirection: TextDirection.ltr, child: Row(children: [ SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h), SizedBox(width: 8.w), Expanded(child: Text(selectedLocation.isNotEmpty ? selectedLocation :"noLocationSelected", style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)))])),
+                    Directionality(textDirection: TextDirection.ltr, child: Row(children: [ SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h), SizedBox(width: 8.w), Expanded(child: Text(selectedLocation.isNotEmpty ? selectedLocation : S.of(context).advertiserLocation, style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)))])),
                     SizedBox(height: 8.h),
                     _buildMapSection(context),
                     const SizedBox(height: 10),
@@ -230,11 +475,234 @@ class _ElectronicsAdScreenState extends State<ElectronicsAdScreen> {
    Widget _buildSingleSelectField(BuildContext context, String title, String? selectedValue, List<String> allItems, Function(String?) onConfirm, {double? titleFontSize, bool isRequired = false}) { final s = S.of(context); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: titleFontSize ?? 14.sp)), const SizedBox(height: 4), FormField<String>(validator: isRequired ? (value) { if (selectedValue == null) return 'Required'; return null; } : null, builder: (FormFieldState<String> state) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ GestureDetector(onTap: allItems.isEmpty ? null : () async { final result = await _showSingleSelectPicker(context, title: title, items: allItems); onConfirm(result); state.didChange(result); }, child: Container(height: 48, width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.centerLeft, decoration: BoxDecoration(color: allItems.isEmpty ? Colors.grey.shade200 : Colors.white, border: Border.all(color: state.hasError ? Colors.red : borderColor), borderRadius: BorderRadius.circular(8)), child: Text(selectedValue ?? s.chooseAnOption, style: TextStyle(fontWeight: selectedValue == null ? FontWeight.normal : FontWeight.w500, color: selectedValue == null ? Colors.grey.shade500 : KTextColor, fontSize: 12.sp), overflow: TextOverflow.ellipsis, maxLines: 1))), if(state.hasError) Padding(padding: const EdgeInsets.only(top: 5, left: 10), child: Text(state.errorText!, style: TextStyle(color: Colors.red, fontSize: 10.sp)))]);})]); }
    Future<String?> _showSingleSelectPicker(BuildContext context, { required String title, required List<String> items}) { return showModalBottomSheet<String>(context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) => _SingleSelectBottomSheet(title: title, items: items));}
    Widget _buildImageButton(String title, IconData icon, Color borderColor, {required VoidCallback onPressed}) { return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: onPressed, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)))));}
-   Widget _buildMapSection(BuildContext context) { return SizedBox(height: 250, width: double.infinity, child: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Stack(children: [ Consumer<GoogleMapsProvider>(builder: (context, mapsProvider, child) => GoogleMap(initialCameraPosition: CameraPosition(target: selectedLatLng ?? const LatLng(25.2048, 55.2708), zoom: 12.0), onMapCreated: mapsProvider.onMapCreated, myLocationEnabled: true, myLocationButtonEnabled: false, onTap: (pos) async { final address = await mapsProvider.getAddressFromCoordinates(pos.latitude, pos.longitude); setState(() { selectedLatLng = pos; if(address != null) selectedLocation = address; });}, markers: selectedLatLng == null ? {} : { Marker(markerId: const MarkerId('selected_location'), position: selectedLatLng!)}, gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{ Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())})), Positioned(bottom: 10, left: 10, right: 10, child: Row(children: [ Expanded(child: ElevatedButton.icon(icon: _isLoadingLocation ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : const Icon(Icons.my_location, color: Colors.white, size: 20), label: const Text('Locate Me', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14)), onPressed: _isLoadingLocation ? null : _getCurrentLocation, style: ElevatedButton.styleFrom(backgroundColor: _isLoadingLocation ? Colors.grey : KPrimaryColor, minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))))), const SizedBox(width: 10), Expanded(child: ElevatedButton.icon(icon: const Icon(Icons.map_outlined, color: Colors.white, size: 20), label: const Text('Pick Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12)), onPressed: _navigateToLocationPicker, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF01547E), minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))))]))]))); }
+   Widget _buildMapSection(BuildContext context) { return SizedBox(height: 250, width: double.infinity, child: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Stack(children: [ Consumer<GoogleMapsProvider>(builder: (context, mapsProvider, child) => GoogleMap(initialCameraPosition: CameraPosition(target: selectedLatLng ?? const LatLng(25.2048, 55.2708), zoom: 12.0), onMapCreated: mapsProvider.onMapCreated, myLocationEnabled: true, myLocationButtonEnabled: false, onTap: (pos) async { final address = await mapsProvider.getAddressFromCoordinates(pos.latitude, pos.longitude); setState(() { selectedLatLng = pos; if(address != null) selectedLocation = address; });}, markers: selectedLatLng == null ? {} : { Marker(markerId: const MarkerId('selected_location'), position: selectedLatLng!)}, gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{ Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())})), Positioned(bottom: 10, left: 10, right: 10, child: Row(children: [ Expanded(child: ElevatedButton(onPressed: _isLoadingLocation ? null : _getCurrentLocation, style: ElevatedButton.styleFrom(backgroundColor: _isLoadingLocation ? Colors.grey : KPrimaryColor, minimumSize: const Size(double.infinity, 43), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: _isLoadingLocation ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : const Text('Locate Me', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14)))), const SizedBox(width: 10), Expanded(child: ElevatedButton(onPressed: _navigateToLocationPicker, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF01547E), minimumSize: const Size(double.infinity, 43), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: const Text('Pick Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 13.5))))]))]))); }
 }
-  class TitledDescriptionBox extends StatelessWidget { final String title; final TextEditingController controller; final Color borderColor; const TitledDescriptionBox({Key? key, required this.title, required this.controller, required this.borderColor}) : super(key: key); @override Widget build(BuildContext context) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4), Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: borderColor)), child: TextFormField(controller: controller, maxLines: 5, minLines: 3, maxLength: 5000, style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp), decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.all(12), counterText: "")))]);}}
-  class TitledSelectOrAddField extends StatelessWidget { final String title; final String? value; final List<String> items; final Function(String) onChanged; final bool isNumeric; final Function(String)? onAddNew; const TitledSelectOrAddField({ Key? key, required this.title, required this.value, required this.items, required this.onChanged, this.isNumeric = false, this.onAddNew}) : super(key: key); @override Widget build(BuildContext context) { final s = S.of(context); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4), GestureDetector(onTap: () async { final result = await showModalBottomSheet<String>(context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (_) => _SearchableSelectOrAddBottomSheet(title: title, items: items, isNumeric: isNumeric, onAddNew: onAddNew)); if(result != null && result.isNotEmpty){ onChanged(result); }}, child: Container(height: 48, padding: const EdgeInsets.symmetric(horizontal: 16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Expanded(child: Text( value ?? s.chooseAnOption, style: TextStyle(fontWeight: value == null ? FontWeight.normal : FontWeight.w500, color: value == null ? Colors.grey.shade500 : KTextColor, fontSize: 12.sp), overflow: TextOverflow.ellipsis,))])), ) ]);}}
+  class TitledDescriptionBox extends StatelessWidget { final String title; final TextEditingController controller; final Color borderColor; const TitledDescriptionBox({Key? key, required this.title, required this.controller, required this.borderColor}) : super(key: key); @override Widget build(BuildContext context) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4), Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: borderColor)), child: Column(children: [ TextFormField(controller: controller, maxLines: 5, minLines: 3, maxLength: 5000, style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp), decoration: InputDecoration(border: InputBorder.none, contentPadding: const EdgeInsets.all(12), counterText: "", hintText: 'Enter your description', hintStyle: TextStyle(color: Colors.grey.shade400))), Padding(padding: const EdgeInsets.only(right: 8.0, bottom: 8.0), child: Align(alignment: Alignment.bottomRight, child: ListenableBuilder(listenable: controller, builder: (context, child) => Text('${controller.text.length}/5000', style: const TextStyle(color: Colors.grey, fontSize: 12), textDirection: TextDirection.ltr))),) ]))]);}}
+  class TitledSelectOrAddField extends StatelessWidget { final String title; final String? value; final List<String> items; final Function(String) onChanged; final bool isNumeric; final Function(String)? onAddNew; const TitledSelectOrAddField({ Key? key, required this.title, required this.value, required this.items, required this.onChanged, this.isNumeric = false, this.onAddNew}) : super(key: key); @override Widget build(BuildContext context) { final s = S.of(context); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4), GestureDetector(onTap: () async { final result = await showModalBottomSheet<String>(context: context, backgroundColor: Colors.white, isScrollControlled: true, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (_) => _SearchableSelectOrAddBottomSheet(title: title, items: items, isNumeric: isNumeric, onAddNew: (newValue) async {
+  final token = await const FlutterSecureStorage().read(key: 'auth_token');
+  if (token != null) {
+    final infoProvider = context.read<ElectronicsInfoProvider>();
+    String field;
+    if (title == s.advertiserName) {
+      field = 'advertiser_names';
+    } else if (title == s.phoneNumber) {
+      field = 'phone_numbers';
+    } else if (title == s.whatsApp) {
+      field = 'whatsapp_numbers';
+    } else {
+      field = 'advertiser_names';
+    }
+    final success = await infoProvider.addContactItem(field, newValue, token: token);
+    if (success) {
+      onChanged(newValue);
+    }
+  }
+})); if(result != null && result.isNotEmpty){ onChanged(result); }}, child: Container(height: 48, padding: const EdgeInsets.symmetric(horizontal: 16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: borderColor), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Expanded(child: Text( value ?? s.chooseAnOption, style: TextStyle(fontWeight: value == null ? FontWeight.normal : FontWeight.w500, color: value == null ? Colors.grey.shade500 : KTextColor, fontSize: 12.sp), overflow: TextOverflow.ellipsis,))])), ) ]);}}
   class _SearchableSelectOrAddBottomSheet extends StatefulWidget { final String title; final List<String> items; final bool isNumeric; final Function(String)? onAddNew; const _SearchableSelectOrAddBottomSheet({required this.title, required this.items, this.isNumeric = false, this.onAddNew}); @override _SearchableSelectOrAddBottomSheetState createState() => _SearchableSelectOrAddBottomSheetState(); }
-  class _SearchableSelectOrAddBottomSheetState extends State<_SearchableSelectOrAddBottomSheet> { final TextEditingController _searchController = TextEditingController(); final TextEditingController _addController = TextEditingController(); List<String> _filteredItems = []; String _selectedCountryCode = '+971'; final Map<String, String> _countryCodes = PhoneNumberFormatter.countryCodes; @override void initState() { super.initState(); _filteredItems = List.from(widget.items); _searchController.addListener(_filterItems); } @override void dispose() { _searchController.dispose(); _addController.dispose(); super.dispose(); } void _filterItems() { final query = _searchController.text.toLowerCase(); setState(() => _filteredItems = widget.items.where((i) => i.toLowerCase().contains(query)).toList());} @override Widget build(BuildContext context) { final s = S.of(context); return Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, top: 16, left: 16, right: 16), child: ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75), child: Column(mainAxisSize: MainAxisSize.min, children: [ Text(widget.title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp, color: KTextColor)), const SizedBox(height: 16), TextFormField(controller: _searchController, style: const TextStyle(color: KTextColor), decoration: InputDecoration(hintText: s.search, prefixIcon: const Icon(Icons.search, color: KTextColor), hintStyle: TextStyle(color: KTextColor.withOpacity(0.5)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: KPrimaryColor, width: 2)))), const SizedBox(height: 8), const Divider(), Expanded(child: _filteredItems.isEmpty ? Center(child: Text(s.noResultsFound, style: const TextStyle(color: KTextColor))) : ListView.builder(itemCount: _filteredItems.length, itemBuilder: (context, index) { final item = _filteredItems[index]; return ListTile(title: Text(item, style: const TextStyle(color: KTextColor)), onTap: () => Navigator.pop(context, item)); }, ),), const Divider(), const SizedBox(height: 8), Row(crossAxisAlignment: CrossAxisAlignment.start, children: [ if(widget.isNumeric)...[ SizedBox(width: 90, child: DropdownButtonFormField<String>(value: _selectedCountryCode, items: _countryCodes.entries.map((entry) => DropdownMenuItem<String>(value: entry.value, child: Text(entry.value, style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp)))).toList(), onChanged: (value) => setState(() => _selectedCountryCode = value!), decoration: InputDecoration(contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: KPrimaryColor, width: 2))), isDense: true, isExpanded: true)), const SizedBox(width: 8)], Expanded(child: TextFormField(controller: _addController, keyboardType: widget.isNumeric ? TextInputType.number : TextInputType.text, style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp), decoration: InputDecoration(hintText: widget.isNumeric ? s.phoneNumber : s.addNew, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: KPrimaryColor, width: 2)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)))), const SizedBox(width: 8), ElevatedButton(onPressed: () async { String result = _addController.text.trim(); if (widget.isNumeric && result.isNotEmpty) result = '$_selectedCountryCode$result'; if (result.isNotEmpty) { if (widget.onAddNew != null) await widget.onAddNew!(result); Navigator.pop(context, result);}}, child: Text(s.add, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.sp)), style: ElevatedButton.styleFrom(backgroundColor: KPrimaryColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), minimumSize: const Size(60, 48)))])]) ,) );}}
+  class _SearchableSelectOrAddBottomSheetState extends State<_SearchableSelectOrAddBottomSheet> {
+    final TextEditingController _searchController = TextEditingController();
+    final TextEditingController _addController = TextEditingController();
+    List<String> _filteredItems = [];
+    String _selectedCountryCode = '+971';
+    final Map<String, String> _countryCodes = PhoneNumberFormatter.countryCodes;
+
+    @override
+    void initState() {
+      super.initState();
+      _filteredItems = List.from(widget.items);
+      _searchController.addListener(_filterItems);
+    }
+
+    @override
+    void dispose() {
+      _searchController.dispose();
+      _addController.dispose();
+      super.dispose();
+    }
+
+    void _filterItems() {
+      final query = _searchController.text.toLowerCase();
+      setState(() {
+        _filteredItems = widget.items
+            .where((i) => i.toLowerCase().contains(query))
+            .toList();
+      });
+    }
+
+    @override
+    Widget build(BuildContext context) {
+      final s = S.of(context);
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          top: 16,
+          left: 16,
+          right: 16,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.title,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18.sp,
+                  color: KTextColor,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _searchController,
+                style: const TextStyle(color: KTextColor),
+                decoration: InputDecoration(
+                  hintText: s.search,
+                  prefixIcon: const Icon(Icons.search, color: KTextColor),
+                  hintStyle: TextStyle(color: KTextColor.withOpacity(0.5)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: KPrimaryColor, width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              Expanded(
+                child: _filteredItems.isEmpty
+                    ? Center(
+                        child: Text(
+                          s.noResultsFound,
+                          style: const TextStyle(color: KTextColor),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _filteredItems.length,
+                        itemBuilder: (context, index) {
+                          final item = _filteredItems[index];
+                          return ListTile(
+                            title: Text(
+                              item,
+                              style: const TextStyle(color: KTextColor),
+                            ),
+                            onTap: () => Navigator.pop(context, item),
+                          );
+                        },
+                      ),
+              ),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.isNumeric) ...[
+                    SizedBox(
+                      width: 90,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedCountryCode,
+                        items: _countryCodes.entries
+                            .map(
+                              (entry) => DropdownMenuItem<String>(
+                                value: entry.value,
+                                child: Text(
+                                  entry.value,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: KTextColor,
+                                    fontSize: 12.sp,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedCountryCode = value!),
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: KPrimaryColor, width: 2),
+                          ),
+                        ),
+                        isExpanded: true,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: TextFormField(
+                      controller: _addController,
+                      keyboardType: widget.isNumeric ? TextInputType.number : TextInputType.text,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: KTextColor,
+                        fontSize: 12.sp,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: widget.isNumeric ? s.phoneNumber : s.addNew,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: borderColor),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: borderColor),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: KPrimaryColor, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () async {
+                      String result = _addController.text.trim();
+                      if (widget.isNumeric && result.isNotEmpty) {
+                        result = '$_selectedCountryCode$result';
+                      }
+                      if (result.isNotEmpty) {
+                        if (widget.onAddNew != null) await widget.onAddNew!(result);
+                        Navigator.pop(context, result);
+                      }
+                    },
+                    child: Text(
+                      s.add,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: KPrimaryColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      minimumSize: const Size(60, 48),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
   class _SingleSelectBottomSheet extends StatefulWidget { final String title; final List<String> items; const _SingleSelectBottomSheet({required this.title, required this.items}); @override _SingleSelectBottomSheetState createState() => _SingleSelectBottomSheetState(); }
   class _SingleSelectBottomSheetState extends State<_SingleSelectBottomSheet> { final TextEditingController _searchController = TextEditingController(); List<String> _filteredItems = []; @override void initState() { super.initState(); _filteredItems = List.from(widget.items); _searchController.addListener(_filterItems); } @override void dispose() { _searchController.dispose(); super.dispose(); } void _filterItems() { final query = _searchController.text.toLowerCase(); setState(() => _filteredItems = widget.items.where((item) => item.toLowerCase().contains(query)).toList());} @override Widget build(BuildContext context) { final s = S.of(context); return Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, top: 16, left: 16, right: 16), child: ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7), child: Column(mainAxisSize: MainAxisSize.min, children: [ Text(widget.title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp, color: KTextColor)), const SizedBox(height: 16), TextFormField(controller: _searchController, style: const TextStyle(color: KTextColor), decoration: InputDecoration(hintText: s.search, prefixIcon: const Icon(Icons.search, color: KTextColor), hintStyle: TextStyle(color: KTextColor.withOpacity(0.5)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: KPrimaryColor, width: 2)))), const SizedBox(height: 8), const Divider(), Expanded(child: _filteredItems.isEmpty ? Center(child: Text(s.noResultsFound, style: const TextStyle(color: KTextColor))) : ListView.builder(itemCount: _filteredItems.length, itemBuilder: (context, index) { final item = _filteredItems[index]; return ListTile(title: Text(item, style: const TextStyle(color: KTextColor)), onTap: () => Navigator.pop(context, item)); })), const SizedBox(height: 16)])));}}

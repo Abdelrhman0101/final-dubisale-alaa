@@ -1,21 +1,104 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:advertising_app/constant/string.dart';
-import 'package:advertising_app/generated/l10n.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:dropdown_search/dropdown_search.dart';
+import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../../generated/l10n.dart';
+import '../providers/real_estate_details_provider.dart';
+import '../providers/real_estate_info_provider.dart';
+import 'package:advertising_app/data/repository/real_estate_repository.dart';
+import 'package:advertising_app/data/web_services/api_service.dart';
+import 'package:advertising_app/utils/phone_number_formatter.dart';
+import 'package:advertising_app/generated/l10n.dart';
+import '../../../constant/string.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
 const Color KPrimaryColor = Color.fromRGBO(1, 84, 126, 1);
 
-class RealEstateSaveAdScreen extends StatelessWidget {
-  // استقبال دالة تغيير اللغة
+class RealEstateSaveAdScreen extends StatefulWidget {
+  // استقبال دالة تغيير اللغة ومعرف الإعلان
   final Function(Locale) onLanguageChange;
+  final String adId;
 
-  const RealEstateSaveAdScreen({Key? key, required this.onLanguageChange})
-      : super(key: key);
+  const RealEstateSaveAdScreen({
+    Key? key, 
+    required this.onLanguageChange,
+    required this.adId,
+  }) : super(key: key);
+
+  @override
+  State<RealEstateSaveAdScreen> createState() => _RealEstateSaveAdScreenState();
+}
+
+class _RealEstateSaveAdScreenState extends State<RealEstateSaveAdScreen> {
+  // State variables
+  late TextEditingController _priceController;
+  late TextEditingController _descriptionController;
+  
+  // Contact info
+  String? selectedPhoneNumber;
+  String? selectedWhatsAppNumber;
+  
+  // Image handling
+  File? _mainImage;
+  List<File> _thumbnailImages = [];
+  final ImagePicker _picker = ImagePicker();
+  
+  // State management
+  bool _isLoading = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceController = TextEditingController();
+    _descriptionController = TextEditingController();
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    if (widget.adId == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Fetch real estate details
+      final detailsProvider = Provider.of<RealEstateDetailsProvider>(context, listen: false);
+      await detailsProvider.fetchRealEstateDetails(widget.adId!);
+
+      // Fetch contact info
+      final infoProvider = Provider.of<RealEstateInfoProvider>(context, listen: false);
+      await infoProvider.fetchContactInfo();
+
+      // Populate controllers with existing data
+      final ad = detailsProvider.realEstateDetails;
+      if (ad != null) {
+        _priceController.text = ad.price?.toString() ?? '';
+        _descriptionController.text = ad.description ?? '';
+        selectedPhoneNumber = ad.phoneNumber;
+        selectedWhatsAppNumber = ad.whatsappNumber;
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في تحميل البيانات: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,136 +106,187 @@ class RealEstateSaveAdScreen extends StatelessWidget {
     final s = S.of(context);
     final currentLocale = Localizations.localeOf(context).languageCode;
     final Color borderColor = Color.fromRGBO(8, 194, 201, 1);
-    
-    // قيم وهمية للحقول
-    const emirateValue = 'Dubai';
-    const districtValue = 'Jumeira';
-    const contractTypeValue = 'Rent';
-    const propertyTypeValue = 'Villa';
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 25.h),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator())
+        : Consumer2<RealEstateDetailsProvider, RealEstateInfoProvider>(
+            builder: (context, detailsProvider, infoProvider, child) {
+              final ad = detailsProvider.realEstateDetails;
+              
+              if (ad == null) {
+                return const Center(child: Text('لم يتم العثور على بيانات الإعلان'));
+              }
 
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: Row(
-                  children: [
-                    SizedBox(width: 5.w),
-                    Icon(Icons.arrow_back_ios, color: KTextColor, size: 20.sp),
-                    Transform.translate(
-                      offset: Offset(-3.w, 0),
-                      child: Text(
-                        S.of(context).back,
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w500,
-                          color: KTextColor,
+              return SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(height: 25.h),
+
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 5.w),
+                            Icon(Icons.arrow_back_ios, color: KTextColor, size: 20.sp),
+                            Transform.translate(
+                              offset: Offset(-3.w, 0),
+                              child: Text(
+                                S.of(context).back,
+                                style: TextStyle(
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w500,
+                                  color: KTextColor,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 7.h),
+                      SizedBox(height: 7.h),
 
-              Center(
-                child: Text(
-                  s.realEstateAds,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 24.sp,
-                    color: KTextColor,
+                      Center(
+                        child: Text(
+                          s.realEstateAds,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 24.sp,
+                            color: KTextColor,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 10.h),
+                      
+                      // Read-only fields
+                      _buildFormRow([
+                        _buildReadOnlyField(s.emirate, ad.emirate ?? '', borderColor),
+                        _buildReadOnlyField(s.district, ad.district ?? '', borderColor),
+                      ]),
+                      const SizedBox(height: 7),
+
+                      _buildFormRow([
+                        _buildReadOnlyField(s.area, ad.area ?? '', borderColor),
+                        _buildEditableTextField(s.price, _priceController, borderColor, currentLocale, isNumber: true),
+                      ]),
+                      const SizedBox(height: 7),
+
+                      _buildFormRow([
+                        _buildReadOnlyField(s.contractType, ad.contractType ?? '', borderColor),
+                        _buildReadOnlyField(s.propertyType, ad.propertyType ?? '', borderColor),
+                      ]),
+                      const SizedBox(height: 7),
+
+                      _buildReadOnlyTitleBox(s.title, ad.title ?? '', borderColor, currentLocale),
+                      const SizedBox(height: 7),
+
+                      _buildReadOnlyField(s.advertiserName, ad.advertiserName ?? '', borderColor),
+                      const SizedBox(height: 7),
+
+              // Contact Information
+              const SizedBox(height: 7),
+              _buildFormRow([
+                Consumer<RealEstateInfoProvider>(
+                  builder: (context, infoProvider, child) {
+                    return Expanded(
+                      child: _buildContactField(
+                        s.phoneNumber,
+                        selectedPhoneNumber,
+                        infoProvider.phoneNumbers.isNotEmpty 
+                            ? infoProvider.phoneNumbers 
+                            : [ad.phoneNumber ?? ''],
+                        (newValue) => setState(() => selectedPhoneNumber = newValue),
+                        (value) async {
+                          final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
+                          final success = await infoProvider.addContactItem('phone_numbers', value, token: token);
+                          if (success) {
+                            setState(() => selectedPhoneNumber = value);
+                          }
+                        },
+                        KPrimaryColor,
+                        isNumeric: true,
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 10),
+                Consumer<RealEstateInfoProvider>(
+                  builder: (context, infoProvider, child) {
+                    return Expanded(
+                      child: _buildContactField(
+                        s.whatsApp,
+                        selectedWhatsAppNumber,
+                        infoProvider.whatsappNumbers.isNotEmpty 
+                            ? infoProvider.whatsappNumbers 
+                            : [ad.whatsappNumber ?? ''],
+                        (newValue) => setState(() => selectedWhatsAppNumber = newValue),
+                        (value) async {
+                          final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
+                          final success = await infoProvider.addContactItem('whatsapp_numbers', value, token: token);
+                          if (success) {
+                            setState(() => selectedWhatsAppNumber = value);
+                          }
+                        },
+                        KPrimaryColor,
+                        isNumeric: true,
+                      ),
+                    );
+                  },
+                ),
+              ]),
+                      const SizedBox(height: 7),
+                      
+                      _buildEditableDescriptionBox(s.description, _descriptionController, borderColor),
+                      const SizedBox(height: 10),
+                      
+                      _buildImageButton(s.addMainImage, Icons.add_a_photo_outlined, borderColor, _pickMainImage),
+                      const SizedBox(height: 7),
+                      _buildImageButton(s.add9Images, Icons.add_photo_alternate_outlined, borderColor, _pickThumbnailImages),
+                      const SizedBox(height: 7),
+                      
+                      Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
+                      SizedBox(height: 4.h),
+
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Row(
+                          children: [
+                            SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h),
+                            SizedBox(width: 8.w),
+                            Expanded(
+                              child: Text('${ad.emirate ?? ''} ${ad.district ?? ''}', 
+                                style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 8.h),
+                      _buildMapSection(context),
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isSaving ? null : _saveAd,
+                          child: _isSaving 
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : Text(s.save, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: KPrimaryColor,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              SizedBox(height: 10.h),
-              
-              _buildFormRow([
-                _buildTitledDropdownField(
-                    context, s.emirate, ['Dubai', 'Abu Dhabi'], emirateValue, borderColor),
-                _buildTitledDropdownField(
-                    context, s.district, ['Jumeira', 'Al Barsha'], districtValue, borderColor),
-              ]),
-              const SizedBox(height: 7),
-
-              _buildFormRow([
-                _buildTitledTextField(
-                    s.area, 'Jumeira1', borderColor, currentLocale),
-                _buildTitledTextField(
-                    s.price, 'AED 2000', borderColor, currentLocale, isNumber: true),
-              ]),
-              const SizedBox(height: 7),
-
-              _buildFormRow([
-                _buildTitledDropdownField(
-                    context, s.contractType, ['Rent', 'Sale'], contractTypeValue, borderColor),
-                _buildTitledDropdownField(
-                    context, s.propertyType, ['Villa', 'Apartment'], propertyTypeValue, borderColor),
-              ]),
-              const SizedBox(height: 7),
-
-              _buildTitleBox(context, s.title, 'Luxury Villa For Monthly Rent', borderColor, currentLocale),
-              const SizedBox(height: 7),
-
-              TitledTextFieldWithAction(title: s.advertiserName, initialValue: 'Dubai Investment', borderColor: borderColor, onAddPressed: (){ print("Advertiser Add clicked"); }),
-              const SizedBox(height: 7),
-
-              _buildFormRow([
-                TitledTextFieldWithAction(title: s.phoneNumber, initialValue: '0097708236561', borderColor: borderColor, onAddPressed: (){ print("Phone Add clicked"); }, isNumeric: true),
-                TitledTextFieldWithAction(title: s.whatsApp, initialValue: '0097708236561', borderColor: borderColor, onAddPressed: (){ print("WhatsApp Add clicked"); }, isNumeric: true),
-              ]),
-              const SizedBox(height: 7),
-              
-              TitledDescriptionBox(title: s.description, initialValue: 'Amazing Villa With Luxury Viewing', borderColor: borderColor, maxLength: 15000),
-              const SizedBox(height: 10),
-              
-              _buildImageButton(s.addMainImage, Icons.add_a_photo_outlined, borderColor),
-              const SizedBox(height: 7),
-              _buildImageButton(s.add9Images, Icons.add_photo_alternate_outlined, borderColor),
-              const SizedBox(height: 7),
-              
-              Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
-              SizedBox(height: 4.h),
-
-              Directionality(
-                textDirection: TextDirection.ltr,
-                child: Row(
-                  children: [
-                    SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h),
-                    SizedBox(width: 8.w),
-                    Expanded(
-                      child: Text('Dubai Jumeira', style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500)),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 8.h),
-              _buildMapSection(context),
-              const SizedBox(height: 12),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () { /* Action for Save */ },
-                  child: Text(s.save, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: KPrimaryColor,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
-        ),
-      ),
     );
   }
 
@@ -162,89 +296,142 @@ class RealEstateSaveAdScreen extends StatelessWidget {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children.map((child) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4.0), child: child))).toList());
   }
 
-  Widget _buildTitledTextField(String title, String initialValue,
-      Color borderColor, String currentLocale,
-      {bool isNumber = false}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
-      const SizedBox(height: 4),
-      TextFormField(
-          initialValue: initialValue,
-          style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
-          textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
-          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-          decoration: InputDecoration(
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              fillColor: Colors.white,
-              filled: true))
-    ]);
-  }
-
-  Widget _buildTitledDropdownField(
-      BuildContext context, String title, List<String> items, String? value, Color borderColor,
-      {double? titleFontSize}) {
-    final s = S.of(context);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: titleFontSize ?? 14.sp)),
-      const SizedBox(height: 4),
-      DropdownSearch<String>(
-          filterFn: (item, filter) => item.toLowerCase().startsWith(filter.toLowerCase()),
-          popupProps: PopupProps.menu(
-              menuProps: MenuProps(backgroundColor: Colors.white, borderRadius: BorderRadius.circular(8)),
-              itemBuilder: (context, item, isSelected) => Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Text(item, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: KTextColor))),
-              showSearchBox: true,
-              searchFieldProps: TextFieldProps(
-                  cursorColor: KPrimaryColor,
-                  style: TextStyle(color: KTextColor, fontSize: 14),
-                  decoration: InputDecoration(
-                      hintText: s.search,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)))),
-              emptyBuilder: (context, searchEntry) => Center(child: Text(s.noResultsFound, style: TextStyle(fontSize: 14, color: KTextColor)))),
-          items: items,
-          selectedItem: value,
-          dropdownDecoratorProps: DropDownDecoratorProps(
-              baseStyle: TextStyle(fontWeight: FontWeight.w400, color: KTextColor, fontSize: 12.sp),
-              dropdownSearchDecoration: InputDecoration(
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  fillColor: Colors.white,
-                  filled: true)),
-          onChanged: (val) {})
-    ]);
-  }
-  
-  Widget _buildTitleBox(BuildContext context, String title, String initialValue,
-      Color borderColor, String currentLocale) {
+  Widget _buildReadOnlyField(String title, String value, Color borderColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)),
-        const SizedBox(height: 4),
-        TextFormField(
-          initialValue: initialValue,
-          maxLines: null,
-          style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 14.sp),
-          textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KPrimaryColor, width: 2)),
-            contentPadding: EdgeInsets.all(12),
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, color: KTextColor)),
+        SizedBox(height: 4.h),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade50,
+          ),
+          child: Text(
+            value,
+            style: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildImageButton(String title, IconData icon, Color borderColor) {
-    return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: () {}, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)))));
+  Widget _buildEditableTextField(String title, TextEditingController controller, Color borderColor, String currentLocale, {bool isNumber = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, color: KTextColor)),
+        SizedBox(height: 4.h),
+        TextField(
+          controller: controller,
+          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+          textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
+          style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: KPrimaryColor, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            fillColor: Colors.white,
+            filled: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadOnlyTitleBox(String title, String value, Color borderColor, String currentLocale) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, color: KTextColor)),
+        SizedBox(height: 4.h),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade50,
+          ),
+          child: Text(
+            value,
+            style: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+            textAlign: currentLocale == 'ar' ? TextAlign.right : TextAlign.left,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactField(String title, String? selectedValue, List<String> options, 
+      Function(String?) onChanged, Function(String) onAdd, Color borderColor, {bool isNumeric = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, color: KTextColor)),
+        SizedBox(height: 4.h),
+        TitledSelectOrAddField(
+          title: '',
+          value: selectedValue,
+          items: options,
+          onChanged: (newValue) => onChanged(newValue),
+          onAddNew: (value) async {
+            await onAdd(value);
+          },
+          isNumeric: isNumeric,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditableDescriptionBox(String title, TextEditingController controller, Color borderColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, color: KTextColor)),
+        SizedBox(height: 4.h),
+        TextField(
+          controller: controller,
+          maxLines: 4,
+          maxLength: 15000,
+          style: TextStyle(fontWeight: FontWeight.w500, color: KTextColor, fontSize: 12.sp),
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: KPrimaryColor, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            fillColor: Colors.white,
+            filled: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageButton(String title, IconData icon, Color borderColor, VoidCallback onPressed) {
+    return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: onPressed, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)))));
   }
 
   Widget _buildMapSection(BuildContext context) {
@@ -271,11 +458,286 @@ class RealEstateSaveAdScreen extends StatelessWidget {
           ],
         ));
   }
+
+  // Contact info and image handling methods
+  Future<void> _addContactItem(String type, String value) async {
+    try {
+      final infoProvider = Provider.of<RealEstateInfoProvider>(context, listen: false);
+      final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
+      await infoProvider.addContactItem(type, value, token: token);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم إضافة ${type == 'phone_numbers' ? 'رقم الهاتف' : 'رقم الواتساب'} بنجاح')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ في إضافة البيانات: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickMainImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      
+      if (image != null) {
+        setState(() {
+          _mainImage = File(image.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في اختيار الصورة: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickThumbnailImages() async {
+    try {
+      final List<XFile> images = await _picker.pickMultiImage();
+      
+      if (images.isNotEmpty) {
+        setState(() {
+          _thumbnailImages = images.take(9).map((xfile) => File(xfile.path)).toList();
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في اختيار الصور: $e')),
+      );
+    }
+  }
+
+  // Save functionality
+  Future<void> _saveAd() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final dio = Dio();
+      final storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'auth_token');
+
+      final formData = FormData();
+      
+      // Add method field for PUT request
+      formData.fields.add(MapEntry('_method', 'PUT'));
+      
+      // Add editable fields
+      formData.fields.add(MapEntry('price', _priceController.text));
+      formData.fields.add(MapEntry('description', _descriptionController.text));
+      
+      if (selectedPhoneNumber != null) {
+        formData.fields.add(MapEntry('phone_number', selectedPhoneNumber!));
+      }
+      
+      if (selectedWhatsAppNumber != null) {
+        formData.fields.add(MapEntry('whatsapp_number', selectedWhatsAppNumber!));
+      }
+
+      // Add main image if selected
+      if (_mainImage != null) {
+        formData.files.add(MapEntry(
+          'main_image',
+          await MultipartFile.fromFile(_mainImage!.path),
+        ));
+      }
+
+      // Add thumbnail images if selected
+      for (int i = 0; i < _thumbnailImages.length; i++) {
+        formData.files.add(MapEntry(
+          'thumbnail_images[$i]',
+          await MultipartFile.fromFile(_thumbnailImages[i].path),
+        ));
+      }
+
+      final response = await dio.post(
+         '$baseUrl/api/real-estate/${widget.adId}',
+         data: formData,
+         options: Options(
+           headers: {
+             'Authorization': 'Bearer $token',
+             'Content-Type': 'multipart/form-data',
+           },
+         ),
+       );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم حفظ الإعلان بنجاح')),
+        );
+        Navigator.pop(context);
+      } else {
+        throw Exception('Failed to save ad');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ أثناء حفظ الإعلان: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ++++    الودجت المخصصة المأخوذة من الملف المرجعي          ++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// TitledSelectOrAddField widget definition
+class TitledSelectOrAddField extends StatefulWidget {
+  final String title;
+  final String? value;
+  final List<String> items;
+  final Function(String?) onChanged;
+  final Function(String) onAddNew;
+  final bool isNumeric;
+
+  const TitledSelectOrAddField({
+    Key? key,
+    required this.title,
+    this.value,
+    required this.items,
+    required this.onChanged,
+    required this.onAddNew,
+    this.isNumeric = false,
+  }) : super(key: key);
+
+  @override
+  _TitledSelectOrAddFieldState createState() => _TitledSelectOrAddFieldState();
+}
+
+class _TitledSelectOrAddFieldState extends State<TitledSelectOrAddField> {
+  late TextEditingController _controller;
+  bool _isAdding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    
+    if (_isAdding) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  keyboardType: widget.isNumeric ? TextInputType.phone : TextInputType.text,
+                  decoration: InputDecoration(
+                    hintText: widget.isNumeric ? 'أدخل رقم الهاتف' : 'أدخل القيمة الجديدة',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Color.fromRGBO(8, 194, 201, 1)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Color.fromRGBO(8, 194, 201, 1)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: KPrimaryColor, width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  if (_controller.text.isNotEmpty) {
+                    await widget.onAddNew(_controller.text);
+                    _controller.clear();
+                    setState(() => _isAdding = false);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: KPrimaryColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text('إضافة', style: TextStyle(color: Colors.white)),
+              ),
+              const SizedBox(width: 4),
+              TextButton(
+                onPressed: () => setState(() => _isAdding = false),
+                child: Text('إلغاء', style: TextStyle(color: Colors.grey)),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Color.fromRGBO(8, 194, 201, 1)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          if (widget.items.isNotEmpty)
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: widget.value,
+                  isExpanded: true,
+                  hint: Text('اختر من القائمة'),
+                  items: widget.items.map((String item) {
+                    return DropdownMenuItem<String>(
+                      value: item,
+                      child: Text(item),
+                    );
+                  }).toList(),
+                  onChanged: widget.onChanged,
+                ),
+              ),
+            ),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: KPrimaryColor,
+              borderRadius: widget.items.isEmpty 
+                  ? BorderRadius.circular(8)
+                  : BorderRadius.only(
+                      bottomLeft: Radius.circular(8),
+                      bottomRight: Radius.circular(8),
+                    ),
+            ),
+            child: TextButton(
+              onPressed: () => setState(() => _isAdding = true),
+              child: Text(
+                'إضافة جديد',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class TitledTextFieldWithAction extends StatefulWidget {
   final String title;

@@ -112,7 +112,7 @@ class RestaurantAdModel {
       thumbnailImages: thumbs,
       createdAt: json['created_at'],
       planType: json['plan_type'],
-      addCategory: json['add_category'] ?? 'Restaurants',
+      addCategory: json['add_category'] ?? 'restaurant',
       addStatus: json['add_status'] ?? 'Valid',
       adminApproved: json['admin_approved'] ?? false,
       views: int.tryParse(json['views']?.toString() ?? '0') ?? 0,

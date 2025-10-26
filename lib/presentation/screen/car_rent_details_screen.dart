@@ -15,6 +15,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:advertising_app/utils/phone_number_formatter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:advertising_app/presentation/widget/location_map.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 class CarRentDetailsScreen extends StatefulWidget {
   final CarRentAdModel car_rent;
@@ -24,7 +27,7 @@ class CarRentDetailsScreen extends StatefulWidget {
   State<CarRentDetailsScreen> createState() => _car_rentRentDetailsScreenState();
 }
 
-class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
+class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> with FavoritesHelper {
   int _currentPage = 0;
   late PageController _pageController;
 
@@ -32,6 +35,7 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when screen initializes
   }
 
   @override
@@ -147,10 +151,15 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
                       top: 40.h,
                       left: isArabic ? 16.w : null,
                       right: isArabic ? null : 16.w,
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: Colors.white,
-                        size: 30.sp,
+                      child: buildFavoriteIcon(
+                        CarRentAdItemAdapter(car_rent),
+                        onAddToFavorite: () {
+                          // Add to favorites callback
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                          );
+                        },
+                        onRemoveFromFavorite: null, // No delete callback for details screen
                       ),
                     ),
 
@@ -667,5 +676,69 @@ class _car_rentRentDetailsScreenState extends State<CarRentDetailsScreen> {
         ),
       ],
     );
+  }
+}
+
+// Adapter class to make CarRentAdModel compatible with FavoriteItemInterface
+class CarRentAdItemAdapter implements FavoriteItemInterface {
+  final CarRentAdModel _carRent;
+  
+  CarRentAdItemAdapter(this._carRent);
+  
+  @override
+  String get id => _carRent.id.toString();
+  
+  @override
+  String get contact => _carRent.advertiserName;
+  
+  @override
+  String get details => _carRent.title;
+  
+  @override
+  String get category => 'Car Rent';
+  
+  @override
+  String get addCategory => _carRent.addCategory ?? 'Car Rent';
+  
+  @override
+  String get imageUrl => ImageUrlHelper.getMainImageUrl(_carRent.mainImage);
+  
+  @override
+  List<String> get images => [
+    if (_carRent.mainImage != null && _carRent.mainImage!.isNotEmpty)
+      ImageUrlHelper.getMainImageUrl(_carRent.mainImage!),
+    ...ImageUrlHelper.getThumbnailImageUrls(_carRent.thumbnailImages)
+  ].where((img) => img.isNotEmpty).toList();
+  
+  @override
+  String get line1 => "Year: ${_carRent.year}  Km: ${NumberFormatter.formatNumber(_carRent.title)}   Specs: ${_carRent.area ?? ''}";
+  
+  @override
+  String get line2 => _carRent.title;
+  
+  @override
+  String get price => _carRent.price;
+  
+  @override
+  String get location => "${_carRent.emirate}  ${_carRent.area ?? ''}".trim();
+  
+  @override
+  String get title => "${_carRent.make} ${_carRent.model} ${_carRent.trim ?? ''}".trim();
+  
+  @override
+  String get date => _carRent.createdAt?.split('T').first ?? '';
+  
+  @override
+  bool get isPremium {
+    if (_carRent.planType == null) return false;
+    return _carRent.planType!.toLowerCase() != 'free';
+  }
+  
+  @override
+  AdPriority get priority {
+    if (_carRent.planType == null || _carRent.planType!.toLowerCase() == 'free') {
+      return AdPriority.free;
+    }
+    return AdPriority.premium;
   }
 }

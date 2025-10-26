@@ -68,14 +68,17 @@ final String steeringSide;
   @override
   String get line1 => "Year: $year   Km: $km   Specs: $specs";
 
- 
+  @override
+  String get category => 'Cars Sales'; // Category for car sales
+
+  @override
+  String get addCategory => 'Cars Sales'; // API expects lowercase with underscores
 
   @override
   List<String> get images => _images;
   
   @override
-  // TODO: implement id
-  get id => throw UnimplementedError();
+  String get id => title.hashCode.toString(); // استخدام hash code للـ title كـ id فريد
 }
 
 

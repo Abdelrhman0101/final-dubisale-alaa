@@ -40,6 +40,7 @@ import 'package:advertising_app/presentation/providers/electronics_ad_provider.d
 import 'package:advertising_app/presentation/providers/electronics_info_provider.dart';
 import 'package:advertising_app/presentation/providers/other_services_ad_provider.dart';
 import 'package:advertising_app/presentation/providers/other_services_info_provider.dart';
+import 'package:advertising_app/presentation/providers/other_services_ad_post_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -49,6 +50,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:advertising_app/router/go_router_app.dart';
 import 'package:advertising_app/router/local_notifier.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:advertising_app/core/scaffold_messenger_key.dart';
 
 final localeChangeNotifier = LocaleChangeNotifier();
 
@@ -120,6 +122,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => OtherServicesDetailsProvider()),
         ChangeNotifierProvider(create: (_) => ElectronicDetailsProvider()),
         ChangeNotifierProvider(create: (_) => ElectronicsAdPostProvider()),
+        ChangeNotifierProvider(create: (_) => OtherServicesAdPostProvider()),
       //  ChangeNotifierProvider(create: (_) => JobAdProvider()),
 
     // +++ أضيفي السطر التالي +++
@@ -175,6 +178,7 @@ class _RootAppState extends State<RootApp> {
                 GlobalCupertinoLocalizations.delegate,
               ],
               debugShowCheckedModeBanner: false,
+              scaffoldMessengerKey: rootScaffoldMessengerKey,
               theme: theme,
               builder: (context, child) {
                 return MediaQuery.withClampedTextScaling(

@@ -31,12 +31,15 @@ class OtherServiceModel implements FavoriteItemInterface {
   @override
   String get line1 => "";
 
+  @override
+  String get category => 'Other Services'; // Category for other services
 
+  @override
+  String get addCategory => 'Other Services'; // API expects lowercase with underscores
 
-@override
+  @override
   List<String> get images => _images;
   
   @override
-  // TODO: implement id
-  get id => throw UnimplementedError(); 
+  String get id => title.hashCode.toString(); 
 }

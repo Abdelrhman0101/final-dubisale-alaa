@@ -160,7 +160,7 @@ class CarSalesInfoProvider extends ChangeNotifier {
   }
 
   /// Fetch car makes and models from API
-  Future<void> fetchCarMakesAndModels({String? token}) async {
+  Future<void> fetchCarMakesAndModels() async {
     _isLoadingMakesAndModels = true;
     _makesAndModelsError = null;
     safeNotifyListeners();
@@ -182,7 +182,7 @@ class CarSalesInfoProvider extends ChangeNotifier {
   }
 
   /// Fetch car specifications from API
-  Future<void> fetchCarSpecs({String? token}) async {
+  Future<void> fetchCarSpecs() async {
     _isLoadingSpecs = true;
     _specsError = null;
     safeNotifyListeners();
@@ -208,14 +208,17 @@ class CarSalesInfoProvider extends ChangeNotifier {
   }
 
   /// Fetch contact information from API
-  Future<void> fetchContactInfo({String? token}) async {
+  Future<void> fetchContactInfo() async {
     _isLoadingContactInfo = true;
     _contactInfoError = null;
     safeNotifyListeners();
 
     try {
+      // قراءة الـ token من الـ storage
+      final token = await _storage.read(key: 'auth_token');
+      
       // بيانات عامة - لا حاجة لتوكن
-      final response = await _apiService.get('/api/contact-info');
+      final response = await _apiService.get('/api/contact-info', token: token);
       
       if (response['success'] == true && response['data'] != null) {
         final data = response['data'];
@@ -252,7 +255,7 @@ class CarSalesInfoProvider extends ChangeNotifier {
 
     try {
       // استخدام التوكن الجديد من التحقق
-      final authToken = token ?? await _storage.read(key: 'verify_account_token') ?? await _storage.read(key: 'auth_token');
+      final authToken = token ?? await _storage.read(key: 'auth_token') ?? await _storage.read(key: 'auth_token');
       
       final response = await _apiService.post(
         '/api/contact-info/add-item',

@@ -17,6 +17,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:advertising_app/presentation/widget/location_map.dart';
+import 'package:advertising_app/utils/favorites_helper.dart';
+import 'package:advertising_app/data/model/favorite_item_interface_model.dart';
+import 'package:advertising_app/data/model/ad_priority.dart';
 
 class RestaurantDetailsScreen extends StatefulWidget {
   final int adId;
@@ -27,7 +30,7 @@ class RestaurantDetailsScreen extends StatefulWidget {
       _RestaurantDetailsScreenState();
 }
 
-class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
+class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> with FavoritesHelper {
   int _currentPage = 0;
   late PageController _pageController;
 
@@ -47,6 +50,7 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    loadFavoriteIds(); // Load favorite IDs when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<RestaurantDetailsProvider>(context, listen: false);
       provider.fetchAdDetails(widget.adId);
@@ -243,10 +247,15 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
                       top: 40.h,
                       left: isArabic ? 16.w : null,
                       right: isArabic ? null : 16.w,
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: Colors.white,
-                        size: 30.sp,
+                      child: buildFavoriteIcon(
+                        RestaurantAdItemAdapter(restaurant),
+                        onAddToFavorite: () {
+                          // Add to favorites callback
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم إضافة الإعلان للمفضلة')),
+                          );
+                        },
+                        onRemoveFromFavorite: null, // No delete callback for details screen
                       ),
                     ),
 
@@ -657,5 +666,56 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
         );
       }
     }
+  }
+}
+
+// Adapter class to make RestaurantAdModel compatible with FavoriteItemInterface
+class RestaurantAdItemAdapter implements FavoriteItemInterface {
+  final RestaurantAdModel restaurant;
+
+  RestaurantAdItemAdapter(this.restaurant);
+
+  @override
+  String get id => restaurant.id.toString();
+
+  @override
+  String get title => restaurant.title ?? '';
+
+  @override
+  String get location => "${restaurant.emirate ?? ''} ${restaurant.district ?? ''} ${restaurant.area ?? ''}".trim();
+
+  @override
+  String get price => restaurant.priceRange ?? '';
+
+  @override
+  String get line1 => restaurant.title ?? '';
+
+  @override
+  String get details => restaurant.description ?? '';
+
+  @override
+  String get date => restaurant.createdAt ?? '';
+
+  @override
+  String get contact => restaurant.phoneNumber ?? '';
+
+  @override
+  bool get isPremium => restaurant.planType == 'premium' || restaurant.activeOffersBoxStatus;
+
+  @override
+  List<String> get images => restaurant.thumbnailImages ?? [];
+
+  @override
+  String get category => 'restaurant';
+
+  @override
+  String get addCategory => 'restaurant';
+
+  @override
+  AdPriority get priority {
+    if (restaurant.planType == 'premium' || restaurant.activeOffersBoxStatus) {
+      return AdPriority.premium;
+    }
+    return AdPriority.free;
   }
 }

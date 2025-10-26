@@ -699,6 +699,11 @@ class _LocationCleanedAdapter implements FavoriteItemInterface {
   @override
   AdPriority get priority => _base.priority;
   @override
+  String get category => _base.category; // Pass through the category
+  
+  @override
+  String get addCategory => _base.addCategory; // Pass through the addCategory
+  @override
   get id => _base.id;
 }
 

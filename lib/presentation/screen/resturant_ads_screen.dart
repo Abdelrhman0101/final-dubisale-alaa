@@ -17,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geocoding/geocoding.dart';
 
 // تعريف الثوابت المستخدمة في الألوان
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -72,6 +73,9 @@ class _RestaurantsAdScreenState extends State<RestaurantsAdScreen> {
 
       // تحميل الموقع المحفوظ من FlutterSecureStorage
       await _loadSavedLocation();
+
+      // إذا كان لدينا عنوان في selectedLocation ولم نحدد إحداثيات بعد، حوّل العنوان إلى إحداثيات وحرك الكاميرا
+      await _applySelectedLocationAddress();
     });
   }
 
@@ -203,6 +207,33 @@ class _RestaurantsAdScreenState extends State<RestaurantsAdScreen> {
                   ),
                 ),
               ),
+              SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -213,24 +244,38 @@ class _RestaurantsAdScreenState extends State<RestaurantsAdScreen> {
   // دالة تحميل الموقع المحفوظ من FlutterSecureStorage
   Future<void> _loadSavedLocation() async {
     try {
+      // أولاً حاول قراءة المفاتيح العامة للحفظ داخل الشاشات
       final savedLat = await _storage.read(key: 'saved_latitude');
       final savedLng = await _storage.read(key: 'saved_longitude');
       final savedAddress = await _storage.read(key: 'saved_address');
 
-      if (savedLat != null && savedLng != null && savedAddress != null) {
-        setState(() {
-          selectedLatLng =
-              LatLng(double.parse(savedLat), double.parse(savedLng));
-          selectedLocation = savedAddress;
-        });
+      String? latStr = savedLat;
+      String? lngStr = savedLng;
+      String? addrStr = savedAddress;
 
-        // تحريك الكاميرا إلى الموقع المحفوظ
-        final googleMapsProvider = context.read<GoogleMapsProvider>();
-        await googleMapsProvider.moveCameraToLocation(
-          double.parse(savedLat),
-          double.parse(savedLng),
-          zoom: 16.0,
-        );
+      // إن لم تتوفر، استخدم مفاتيح بيانات المستخدم المحفوظة من مزود المصادقة
+      if (latStr == null || lngStr == null || addrStr == null) {
+        final userLat = await _storage.read(key: 'user_latitude');
+        final userLng = await _storage.read(key: 'user_longitude');
+        final userAddr = await _storage.read(key: 'user_address');
+        latStr ??= userLat;
+        lngStr ??= userLng;
+        addrStr ??= userAddr;
+      }
+
+      if (latStr != null && lngStr != null && addrStr != null) {
+        final lat = double.tryParse(latStr);
+        final lng = double.tryParse(lngStr);
+        if (lat != null && lng != null) {
+          setState(() {
+            selectedLatLng = LatLng(lat, lng);
+            selectedLocation = addrStr!;
+          });
+
+          // تحريك الكاميرا إلى الموقع المحفوظ
+          final googleMapsProvider = context.read<GoogleMapsProvider>();
+          await googleMapsProvider.moveCameraToLocation(lat, lng, zoom: 16.0);
+        }
       }
     } catch (e) {
       print('Error loading saved location: $e');
@@ -346,6 +391,28 @@ class _RestaurantsAdScreenState extends State<RestaurantsAdScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Error picking location: $e'),
           backgroundColor: Colors.red));
+    }
+  }
+
+  // دالة لمواءمة الخريطة مع نص العنوان الحالي إذا لم تكن الإحداثيات محددة
+  Future<void> _applySelectedLocationAddress() async {
+    try {
+      if (selectedLatLng == null && selectedLocation.isNotEmpty) {
+        final locations = await locationFromAddress(selectedLocation);
+        if (locations.isNotEmpty) {
+          final loc = locations.first;
+          final latLng = LatLng(loc.latitude, loc.longitude);
+          setState(() {
+            selectedLatLng = latLng;
+          });
+          final mapsProvider = context.read<GoogleMapsProvider>();
+          await mapsProvider.moveCameraToLocation(
+              latLng.latitude, latLng.longitude,
+              zoom: 16.0);
+        }
+      }
+    } catch (e) {
+      print('Error geocoding selectedLocation: $e');
     }
   }
 

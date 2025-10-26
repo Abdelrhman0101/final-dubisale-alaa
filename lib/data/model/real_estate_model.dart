@@ -21,6 +21,7 @@ class RealEstateModel implements FavoriteItemInterface {
   
   final String? propertyType;
   final String? contractType;
+  final String? _addCategory; // Dynamic category from API
 
 
   RealEstateModel(this.emirate, this.district, this.area, this.propertyType, this.contractType, {
@@ -34,14 +35,19 @@ class RealEstateModel implements FavoriteItemInterface {
     required this.isPremium,
     required List<String> images, 
     required this.priority,
-  }) : _images = images;
+    String? addCategory,
+  }) : _images = images, _addCategory = addCategory;
 
 
   @override
   String get line1 => "";
 
+  @override
+  String get category => 'Real State'; // Category for real estate
 
+  @override
+  String get addCategory => _addCategory ?? 'Real State'; // Use dynamic category from API or fallback
 
-@override
+  @override
   List<String> get images => _images; 
 }

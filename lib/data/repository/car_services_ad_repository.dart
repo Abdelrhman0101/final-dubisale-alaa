@@ -105,18 +105,69 @@ class CarServicesAdRepository {
     String? token,
     Map<String, dynamic>? query, // سيستخدم للفلترة لاحقًا
   }) async {
-     final endpoint = (query != null && query.isNotEmpty) ? '/api/car-services/search' : '/api/car-services';
+    final endpoint = (query != null && query.isNotEmpty) ? '/api/car-services/search' : '/api/car-services';
 
-  final response = await _apiService.get(endpoint, token: token, query: query);
+    try {
+      final response = await _apiService.get(endpoint, token: token, query: query);
 
-
-   
-   
-    if (response is Map<String, dynamic>) {
-      return CarServiceAdResponse.fromJson(response);
+      // Handle different response formats
+      if (response is Map<String, dynamic>) {
+        // Check if response has the expected structure with 'data' key
+        if (response.containsKey('data')) {
+          return CarServiceAdResponse.fromJson(response);
+        }
+        
+        // Check if response has 'ads' key (alternative format)
+        if (response.containsKey('ads')) {
+          final transformedResponse = {
+            'data': response['ads'],
+            'currentPage': response['currentPage'] ?? 1,
+            'lastPage': response['lastPage'] ?? 1,
+          };
+          return CarServiceAdResponse.fromJson(transformedResponse);
+        }
+        
+        // Check if it's an error response
+        if (response.containsKey('error') || response.containsKey('message')) {
+          final errorMessage = response['error'] ?? response['message'] ?? 'Unknown API error';
+          throw Exception('API Error: $errorMessage');
+        }
+        
+        // If response is a map but doesn't have expected keys, throw error
+        throw Exception('Unexpected API response format: ${response.keys.join(', ')}');
+      }
+      
+      // Handle direct list response
+      if (response is List) {
+        final transformedResponse = {
+          'data': response,
+          'currentPage': 1,
+          'lastPage': 1,
+        };
+        return CarServiceAdResponse.fromJson(transformedResponse);
+      }
+      
+      // Handle null or empty response
+      if (response == null) {
+        final emptyResponse = {
+          'data': <Map<String, dynamic>>[],
+          'currentPage': 1,
+          'lastPage': 1,
+        };
+        return CarServiceAdResponse.fromJson(emptyResponse);
+      }
+      
+      throw Exception('Unexpected response type: ${response.runtimeType}');
+      
+    } catch (e) {
+      // Re-throw with more context if it's already an Exception
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      // Wrap other errors
+      throw Exception('Failed to fetch car service ads: $e');
     }
-    
-    throw Exception('API response format is not as expected for CarServiceAdResponse.');
   }
 
 

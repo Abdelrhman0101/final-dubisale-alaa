@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geocoding/geocoding.dart';
 
 // الثوابت
 const Color KTextColor = Color.fromRGBO(0, 30, 91, 1);
@@ -62,11 +63,9 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
       final adProvider = context.read<CarAdProvider>();
       final authProvider = context.read<AuthProvider>();
 
-      // Get token from secure storage
-      final token = await const FlutterSecureStorage().read(key: 'auth_token');
-
-      infoProvider.fetchCarSpecs(token: token);
-      infoProvider.fetchContactInfo(token: token);
+      // استدعاء الدوال بدون استخدام token
+      infoProvider.fetchCarSpecs();
+      infoProvider.fetchContactInfo(); // سيقوم بقراءة الـ token من الـ storage داخلياً
       adProvider.fetchMakes();
 
       // تحديث موقع الخريطة إذا كانت الإحداثيات متوفرة
@@ -90,6 +89,27 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
 
       // تحميل الموقع المحفوظ من FlutterSecureStorage
       await _loadSavedLocation();
+
+      // في حال توفر عنوان نصي في selectedLocation ولم تكن الإحداثيات محددة، نقوم بعمل geocoding وتحريك الكاميرا
+      if (selectedLocation.isNotEmpty && selectedLatLng == null) {
+        try {
+          final locations = await locationFromAddress(selectedLocation);
+          if (locations.isNotEmpty) {
+            final first = locations.first;
+            selectedLatLng = LatLng(first.latitude, first.longitude);
+            final googleMapsProvider = context.read<GoogleMapsProvider>();
+            await googleMapsProvider.moveCameraToLocation(first.latitude, first.longitude, zoom: 14.0);
+            googleMapsProvider.addMarker(
+              'selected_location',
+              LatLng(first.latitude, first.longitude),
+              title: 'الموقع المحدد',
+              snippet: selectedLocation,
+            );
+          }
+        } catch (e) {
+          debugPrint('Geocoding failed: $e');
+        }
+      }
     });
   }
 
@@ -199,7 +219,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
               ],
             ),
             actions: [
-              SizedBox(
+               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
@@ -225,6 +245,33 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
                   ),
                 ),
               ),
+             const SizedBox(height: 8),
+            SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color.fromRGBO(1, 84, 126, 1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+             
+             
             ],
           ),
         );
@@ -247,7 +294,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
 
     await infoProvider.addContactItem(field, value, token: token);
     // إعادة جلب البيانات بعد الإضافة
-    await infoProvider.fetchContactInfo(token: token);
+    await infoProvider.fetchContactInfo();
   }
 
   // دالة حفظ الموقع في FlutterSecureStorage
@@ -499,11 +546,11 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
   }
 
   Future<void> _pickThumbnailImages() async {
-    const int maxImages = 14;
+    const int maxImages = 19;
     final int remainingSlots = maxImages - _thumbnailImages.length;
     if (remainingSlots <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('You have already added the maximum of 14 images.')));
+          content: Text('You have already added the maximum of 19 images.')));
       return;
     }
     final List<XFile> pickedImages =
@@ -607,8 +654,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
       'phoneNumber': formattedPhone,
       'whatsapp': formattedWhatsApp,
       'emirate': selectedEmirate!,
-      'area':
-          selectedLocation.isNotEmpty ? selectedLocation : _areaController.text,
+      'area': _areaController.text,
       'advertiserType': selectedAdvertiserType!,
       'mainImage': _mainImage!,
       'thumbnailImages': _thumbnailImages,
@@ -1074,7 +1120,7 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
                                         height: 150, fit: BoxFit.cover)))),
                       const SizedBox(height: 7),
                       _buildImageButton(
-                          '${s.add14Images} (${_thumbnailImages.length}/14)',
+                          '${s.add14Images} (${_thumbnailImages.length}/19)',
                           Icons.add_photo_alternate_outlined,
                           borderColor,
                           onPressed: _pickThumbnailImages),
@@ -1430,8 +1476,17 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
                 children: [
                   // زر "Locate Me"
                   Expanded(
-                    child: ElevatedButton.icon(
-                      icon: _isLoadingLocation
+                    child: ElevatedButton(
+                      onPressed:
+                          _isLoadingLocation ? null : _getCurrentLocation,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _isLoadingLocation ? Colors.grey : KPrimaryColor,
+                        minimumSize: const Size(double.infinity, 43),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: _isLoadingLocation
                           ? const SizedBox(
                               width: 20,
                               height: 20,
@@ -1441,44 +1496,31 @@ class _CarSalesAdScreenState extends State<CarSalesAdScreen> {
                                     AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Icon(Icons.my_location,
-                              color: Colors.white, size: 20),
-                      label: Text(s.locateMe,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14)),
-                      onPressed:
-                          _isLoadingLocation ? null : _getCurrentLocation,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            _isLoadingLocation ? Colors.grey : KPrimaryColor,
-                        minimumSize: const Size(0, 48),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
+                          : const Text('Locate Me',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14)),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // زر "Open Google Map"
+                  // زر "Pick Location"
                   Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.location_on_outlined,
-                          color: Colors.white, size: 20),
-                      label: const Text('Open Google Map',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 12)),
+                    child: ElevatedButton(
                       onPressed: () async {
                         await _navigateToLocationPicker();
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF01547E),
-                        minimumSize: const Size(0, 48),
+                        minimumSize: const Size(double.infinity, 43),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
+                      child: const Text('Pick Location',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13.5)),
                     ),
                   ),
                 ],
@@ -1525,7 +1567,7 @@ class _TitledDescriptionBoxState extends State<TitledDescriptionBox> {
                 controller: widget.controller,
                 maxLines: 5,
                 minLines: 3,
-                maxLength: 5000,
+                maxLength: 15000,
                 style: const TextStyle(
                     fontWeight: FontWeight.w500,
                     color: KTextColor,
@@ -1542,7 +1584,7 @@ class _TitledDescriptionBoxState extends State<TitledDescriptionBox> {
                   child: ListenableBuilder(
                     listenable: widget.controller,
                     builder: (context, child) => Text(
-                        '${widget.controller.text.length}/5000',
+                        '${widget.controller.text.length}/15000',
                         style:
                             const TextStyle(color: Colors.grey, fontSize: 12),
                         textDirection: TextDirection.ltr),

@@ -1,12 +1,16 @@
 import 'dart:io';
 import 'package:advertising_app/data/model/car_ad_model.dart';
 import 'package:advertising_app/presentation/providers/car_sales_ad_provider.dart';
+import 'package:advertising_app/presentation/providers/car_sales_info_provider.dart';
+import 'package:advertising_app/presentation/providers/google_maps_provider.dart';
 import 'package:advertising_app/presentation/screen/car_rent_ads_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:advertising_app/generated/l10n.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -47,6 +51,9 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
     super.initState();
     // جلب بيانات الإعلان وملء الحقول بمجرد فتح الشاشة
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // جلب بيانات الاتصال الحقيقية
+      Provider.of<CarSalesInfoProvider>(context, listen: false).fetchContactInfo();
+      
       Provider.of<CarAdProvider>(context, listen: false)
           .fetchAdDetails(widget.adId)
           .then((_) {
@@ -83,33 +90,81 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
   Future<void> _pickThumbnailImages() async {
     final List<XFile> images = await _picker.pickMultiImage();
     if (images.isNotEmpty) {
+      // حساب العدد الحالي للصور المختارة
+      int currentCount = _thumbnailImageFiles.length;
+      int availableSlots = 19 - currentCount;
+      
+      List<File> newImages = images.map((xfile) => File(xfile.path)).toList();
+      
+      // إذا كان العدد الجديد يتجاوز الحد المسموح
+      if (newImages.length > availableSlots) {
+        // أخذ فقط العدد المسموح به
+        newImages = newImages.take(availableSlots).toList();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم اختيار ${newImages.length} صورة فقط. الحد الأقصى هو 19 صورة إجمالية'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      
       setState(() {
-        _thumbnailImageFiles.clear(); // مسح الصور القديمة قبل إضافة الجديدة
-        _thumbnailImageFiles.addAll(images.map((xfile) => File(xfile.path)));
+        _thumbnailImageFiles.addAll(newImages);
       });
     }
   }
 
   void _onSaveChanges() async {
       final provider = Provider.of<CarAdProvider>(context, listen: false);
+      final ad = provider.adDetails;
+
+      // Sanitize inputs
+      final String price = _priceController.text.trim();
+      final String description = _descriptionController.text.trim();
+      final String? phone = (selectedPhoneNumber?.trim().isNotEmpty ?? false)
+          ? selectedPhoneNumber!.trim()
+          : null;
+      final String? whatsapp = (selectedWhatsAppNumber?.trim().isNotEmpty ?? false)
+          ? selectedWhatsAppNumber!.trim()
+          : null;
       
-      // Create the update data map
+      // Create the update data map (only include changed fields)
       Map<String, dynamic> updateData = {
-        'price': _priceController.text,
-        'description': _descriptionController.text,
-        'phoneNumber': selectedPhoneNumber ?? '',
-        'whatsapp': selectedWhatsAppNumber,
+        'description': description,
       };
       
-      // Add images if they exist
+      // Only include price if it was actually changed
+      if (price.isNotEmpty && price != ad?.price) {
+        updateData['price'] = price;
+      }
+      
+      if (phone != null) {
+        updateData['phoneNumber'] = phone; // provider accepts camelCase or snake_case
+      }
+      if (whatsapp != null) {
+        updateData['whatsapp'] = whatsapp;
+      }
+      
+      // Images handling: send file if picked; otherwise send existing image as string
       if (_mainImageFile != null) {
         updateData['mainImage'] = _mainImageFile;
+      } else if (ad != null && ad.mainImage.isNotEmpty) {
+        updateData['main_image'] = ad.mainImage; // keep current image via string
       }
       if (_thumbnailImageFiles.isNotEmpty) {
         updateData['thumbnailImages'] = _thumbnailImageFiles;
       }
+      // Preserve area if available (backend maps selectedarea/area)
+      if (ad?.area != null && ad!.area!.isNotEmpty) {
+        updateData['area'] = ad.area;
+      }
+
+      // Diagnostics to verify payload shape
+      print('--- Save Edit: updateData keys --- ${updateData.keys.toList()}');
+      print('Main image file? ${_mainImageFile != null}, string? ${updateData.containsKey('main_image')}');
       
-      bool success = await provider.updateAd(updateData, widget.adId.toString());
+      bool success = await provider.updateAd(widget.adId.toString(), updateData);
 
       if (mounted) {
           if (success) {
@@ -191,8 +246,44 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
               _buildReadOnlyField(s.advertiserName, ad.advertiserName),
               const SizedBox(height: 7),
               _buildFormRow([
-                  TitledSelectOrAddField( title: s.phoneNumber, value: selectedPhoneNumber, items: [ad.phoneNumber, '00971501111111'], onChanged: (newValue) => setState(() => selectedPhoneNumber = newValue), isNumeric: true),
-                  TitledSelectOrAddField( title: s.whatsApp, value: selectedWhatsAppNumber, items: [ad.whatsapp ?? '', '00971502222222'], onChanged: (newValue) => setState(() => selectedWhatsAppNumber = newValue), isNumeric: true),
+                Consumer<CarSalesInfoProvider>(
+                  builder: (context, infoProvider, child) {
+                    return TitledSelectOrAddField(
+                      title: s.phoneNumber,
+                      value: selectedPhoneNumber,
+                      items: infoProvider.phoneNumbers.isNotEmpty 
+                          ? infoProvider.phoneNumbers 
+                          : [ad.phoneNumber ?? ''],
+                      onChanged: (newValue) => setState(() => selectedPhoneNumber = newValue),
+                      onAddNew: (value) async {
+                        final success = await infoProvider.addContactItem('phone_numbers', value);
+                        if (success) {
+                          setState(() => selectedPhoneNumber = value);
+                        }
+                      },
+                      isNumeric: true,
+                    );
+                  },
+                ),
+                Consumer<CarSalesInfoProvider>(
+                  builder: (context, infoProvider, child) {
+                    return TitledSelectOrAddField(
+                      title: s.whatsApp,
+                      value: selectedWhatsAppNumber,
+                      items: infoProvider.whatsappNumbers.isNotEmpty 
+                          ? infoProvider.whatsappNumbers 
+                          : [ad.whatsapp ?? ''],
+                      onChanged: (newValue) => setState(() => selectedWhatsAppNumber = newValue),
+                      onAddNew: (value) async {
+                        final success = await infoProvider.addContactItem('whatsapp_numbers', value);
+                        if (success) {
+                          setState(() => selectedWhatsAppNumber = value);
+                        }
+                      },
+                      isNumeric: true,
+                    );
+                  },
+                ),
               ]),
               const SizedBox(height: 7),
               _buildFormRow([ _buildReadOnlyField(s.emirate, ad.emirate), _buildReadOnlyField(s.advertiserType, ad.advertiserType), ]),
@@ -204,16 +295,57 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
               
               // التعامل مع الصور
               _buildImageButton(s.addMainImage, Icons.add_a_photo_outlined, borderColor, onPressed: _pickMainImage),
-              if(_mainImageFile != null) ...[const SizedBox(height: 4), Text('  تم اختيار صورة رئيسية جديدة', style: TextStyle(color: Colors.green))],
+              if(_mainImageFile != null) ...[
+                const SizedBox(height: 4), 
+                Text('  تم اختيار صورة رئيسية جديدة', style: TextStyle(color: Colors.green)),
+                const SizedBox(height: 8),
+                Container(
+                  height: 100,
+                  width: 100,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(_mainImageFile!, fit: BoxFit.cover),
+                  ),
+                ),
+              ],
               const SizedBox(height: 7),
               _buildImageButton(s.add14Images, Icons.add_photo_alternate_outlined, borderColor, onPressed: _pickThumbnailImages),
-              if(_thumbnailImageFiles.isNotEmpty) ...[const SizedBox(height: 4), Text('  تم اختيار ${_thumbnailImageFiles.length} صورة مصغرة جديدة', style: TextStyle(color: Colors.green))],
+              if(_thumbnailImageFiles.isNotEmpty) ...[
+                const SizedBox(height: 4), 
+                Text('  تم اختيار ${_thumbnailImageFiles.length} صورة مصغرة جديدة', style: TextStyle(color: Colors.green)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 100,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _thumbnailImageFiles.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(_thumbnailImageFiles[index], fit: BoxFit.cover),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
 
               // باقي الواجهة
               Text(s.location, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: KTextColor)),
               SizedBox(height: 4.h),
-              Directionality(textDirection: TextDirection.ltr, child: Row(children: [ SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h), SizedBox(width: 8.w), Expanded(child: Text('Dubai souq alharaj', style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500))),],),),
+              Directionality(textDirection: TextDirection.ltr, child: Row(children: [ SvgPicture.asset('assets/icons/locationicon.svg', width: 20.w, height: 20.h), SizedBox(width: 8.w), Expanded(child: Text("${ad.location}' : ''}", style: TextStyle(fontSize: 14.sp, color: KTextColor, fontWeight: FontWeight.w500))),],),),
               SizedBox(height: 8.h),
               _buildMapSection(context),
               const SizedBox(height: 10),
@@ -266,7 +398,122 @@ class _CarSalesSaveAdScreenState extends State<CarSalesSaveAdScreen> {
    Widget _buildReadOnlyField(String title, String value, {double? titleFontSize}) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: titleFontSize ?? 14.sp)), const SizedBox(height: 4), Container(height: 48, width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.centerLeft, decoration: BoxDecoration(color: KDisabledColor, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(8)), child: Text(value, style: TextStyle(fontWeight: FontWeight.w500, color: KDisabledTextColor, fontSize: 12.sp), overflow: TextOverflow.ellipsis, maxLines: 1))]); }
    Widget _buildTitleBox(BuildContext context, String title, String initialValue, Color borderColor, String currentLocale) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 14.sp)), const SizedBox(height: 4), TextFormField(initialValue: initialValue, readOnly: true, style: TextStyle(fontWeight: FontWeight.w500, color: KDisabledTextColor, fontSize: 14.sp), decoration: InputDecoration(filled: true, fillColor: KDisabledColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade400)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade400)), contentPadding: const EdgeInsets.all(12)))]); }
    Widget _buildImageButton(String title, IconData icon, Color borderColor, {required VoidCallback onPressed}) { return SizedBox(width: double.infinity, child: OutlinedButton.icon(icon: Icon(icon, color: KTextColor), label: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: KTextColor, fontSize: 16.sp)), onPressed: onPressed, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: borderColor), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0))))); }
-   Widget _buildMapSection(BuildContext context) { return SizedBox(height: 320.h, width: double.infinity, child: Stack(children: [ Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset('assets/images/map.png', fit: BoxFit.cover))), Positioned(top: 180, left: 30, right: 30, child: const Icon(Icons.location_pin, color: Colors.red, size: 40)), Positioned(bottom: 10, left: 10, right: 155, child: ElevatedButton.icon(icon: const Icon(Icons.location_on_outlined, color: Colors.white, size: 26), label: Text(S.of(context).locateMe, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 16)), onPressed: () {}, style: ElevatedButton.styleFrom(backgroundColor: KPrimaryColor, minimumSize: const Size(double.infinity, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))))) ],),); }
+   Widget _buildMapSection(BuildContext context) {
+    final provider = context.watch<CarAdProvider>();
+    final ad = provider.adDetails;
+    
+    return Consumer<GoogleMapsProvider>(
+      builder: (context, mapsProvider, child) {
+        return Container(
+          height: 320.h,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: FutureBuilder<LatLng>(
+              future: _getAdLocation(ad),
+              builder: (context, snapshot) {
+                LatLng adLocation;
+                
+                if (snapshot.hasData) {
+                  adLocation = snapshot.data!;
+                } else {
+                  // Default location while loading
+                  adLocation = const LatLng(25.2048, 55.2708); // Dubai default
+                }
+                
+                return GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: adLocation,
+                    zoom: 14.0,
+                  ),
+                  onMapCreated: (GoogleMapController controller) {
+                    mapsProvider.onMapCreated(controller);
+                    // Move camera to the correct location after map is created
+                    if (snapshot.hasData) {
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        mapsProvider.moveCameraToLocation(
+                          adLocation.latitude, 
+                          adLocation.longitude, 
+                          zoom: 14.0
+                        );
+                      });
+                    }
+                  },
+                  mapType: MapType.normal,
+                  myLocationEnabled: false,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: true,
+                  compassEnabled: true,
+                  zoomGesturesEnabled: true,
+                  scrollGesturesEnabled: true,
+                  rotateGesturesEnabled: true,
+                  tiltGesturesEnabled: true,
+                  markers: {
+                    Marker(
+                      markerId: const MarkerId('ad_location'),
+                      position: adLocation,
+                      infoWindow: InfoWindow(
+                        title: ad?.location?.isNotEmpty == true 
+                            ? 'الموقع المحدد' 
+                            : ad?.emirate ?? 'الموقع',
+                        snippet: ad?.location?.isNotEmpty == true 
+                            ? ad!.location 
+                            : ad?.area ?? '',
+                      ),
+                    ),
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<LatLng> _getAdLocation(dynamic ad) async {
+    // First, try to use the saved location field for geocoding
+    if (ad?.location != null && ad!.location!.trim().isNotEmpty) {
+      try {
+        final locations = await locationFromAddress(ad.location!);
+        if (locations.isNotEmpty) {
+          final first = locations.first;
+          return LatLng(first.latitude, first.longitude);
+        }
+      } catch (e) {
+        debugPrint('Geocoding failed for location "${ad.location}": $e');
+      }
+    }
+    
+    // Fallback to emirate-based coordinates if location geocoding fails
+    if (ad?.emirate != null && ad!.emirate!.isNotEmpty) {
+      switch (ad.emirate!.toLowerCase()) {
+        case 'dubai':
+          return const LatLng(25.2048, 55.2708);
+        case 'abu dhabi':
+          return const LatLng(24.4539, 54.3773);
+        case 'sharjah':
+          return const LatLng(25.3463, 55.4209);
+        case 'ajman':
+          return const LatLng(25.4052, 55.5136);
+        case 'ras al khaimah':
+          return const LatLng(25.7889, 55.9598);
+        case 'fujairah':
+          return const LatLng(25.1288, 56.3264);
+        case 'umm al quwain':
+          return const LatLng(25.5641, 55.6550);
+        default:
+          return const LatLng(25.2048, 55.2708); // Dubai default
+      }
+    }
+    
+    // Final fallback to Dubai coordinates
+    return const LatLng(25.2048, 55.2708);
+  }
 
 }
 
@@ -277,7 +524,7 @@ class TitledDescriptionBox extends StatefulWidget {
   final TextEditingController controller;
   final Color borderColor;
   final int maxLength;
-  const TitledDescriptionBox({Key? key, required this.title, required this.controller, required this.borderColor, this.maxLength = 5000}) : super(key: key);
+  const TitledDescriptionBox({Key? key, required this.title, required this.controller, required this.borderColor, this.maxLength = 15000}) : super(key: key);
   @override
   State<TitledDescriptionBox> createState() => _TitledDescriptionBoxState();
 }

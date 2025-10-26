@@ -11,15 +11,14 @@ class ApiService {
     BaseOptions(
       baseUrl: baseUrl,
       receiveDataWhenStatusError: true,
-      connectTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
-      receiveTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
-      sendTimeout: const Duration(milliseconds: 60000), // زيادة إلى 60 ثانية
+      connectTimeout: const Duration(milliseconds: 60000),
+      receiveTimeout: const Duration(milliseconds: 60000),
+      sendTimeout: const Duration(milliseconds: 60000),
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
     ),
   );
 
   Future<dynamic> get(String endpoint, {Map<String, dynamic>? query, String? token}) async {
-    // --- هنا هو التحسين المطلوب ---
     if (token != null) {
       _dio.options.headers['Authorization'] = 'Bearer $token';
     }
@@ -28,26 +27,22 @@ class ApiService {
       final response = await _dio.get(endpoint, queryParameters: query);
       return response.data;
     } on DioException catch (e) {
-      // Graceful 404 handling for public browsing endpoints
-      final status = e.response?.statusCode;
-      if (status == 404) {
-        final ep = endpoint.toLowerCase();
-        // Heuristics: most browse endpoints return list or {data: []}
-        // Return empty list for ads/offer/list endpoints to avoid UI crashes
-        final looksLikeListEndpoint = ep.contains('ads') || ep.contains('offers-box') || ep.contains('best-advertisers') || ep.contains('models') || ep.contains('specs') || ep.contains('options');
-        if (looksLikeListEndpoint) {
-          return [];
-        }
-        // Otherwise, return empty map as a generic fallback
-        return <String, dynamic>{};
-      }
+      // Log the error for debugging
+      print('=== API GET ERROR ===');
+      print('Endpoint: $endpoint');
+      print('Status Code: ${e.response?.statusCode}');
+      print('Error Message: ${e.message}');
+      print('Response Data: ${e.response?.data}');
+      print('====================');
+      
+      // Don't silently return empty data - let the error propagate
+      // This will help identify the actual issue causing empty ad lists
       throw ErrorHandler.handleDioError(e);
     }
   }
   
   Future<dynamic> post(String endpoint, {required dynamic data, Map<String, dynamic>? query, String? token}) async {
-    // --- وهنا أيضًا ---
-     if (token != null) {
+    if (token != null) {
       _dio.options.headers['Authorization'] = 'Bearer $token';
     }
     
@@ -75,6 +70,11 @@ class ApiService {
       print('Status Code: ${e.response?.statusCode}');
       print('================');
       throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
     }
   }
 
@@ -88,13 +88,23 @@ class ApiService {
     if (token != null) {
       _dio.options.headers['Authorization'] = 'Bearer $token';
     }
-    // تغيير نوع المحتوى للطلبات التي تحتوي على ملفات
+    // Set content type for requests with files
     _dio.options.headers['Content-Type'] = 'multipart/form-data';
 
-    // استخدام FormData من Dio لتجميع البيانات النصية والملفات
-    final formData = FormData.fromMap(data);
+    // Create a new copy of the data to avoid modifying the original
+    // IMPORTANT: Remove any File objects from the data map to prevent JSON conversion errors
+    final Map<String, dynamic> formDataMap = {};
+    data.forEach((key, value) {
+      // Skip File objects in the data map
+      if (value is! File && value is! List<File>) {
+        formDataMap[key] = value;
+      }
+    });
+    
+    // Use FormData to combine text data and files
+    final formData = FormData.fromMap(formDataMap);
 
-    // إضافة الصورة الرئيسية إذا كانت موجودة
+    // Add main image if provided
     if (mainImage != null) {
       formData.files.add(MapEntry(
         'main_image',
@@ -102,12 +112,12 @@ class ApiService {
       ));
     }
     
-    // إضافة الصور المصغرة إذا كانت موجودة
+    // Add thumbnail images if provided
     if (thumbnailImages != null && thumbnailImages.isNotEmpty) {
-      for (var file in thumbnailImages) {
+      for (var i = 0; i < thumbnailImages.length; i++) {
         formData.files.add(MapEntry(
-          'thumbnail_images[]', // الاسم مهم جدًا ليعتبره الباك اند كمصفوفة
-          await MultipartFile.fromFile(file.path),
+          'thumbnail_images[]',
+          await MultipartFile.fromFile(thumbnailImages[i].path),
         ));
       }
     }
@@ -117,6 +127,7 @@ class ApiService {
       print('Endpoint: $endpoint');
       print('FormData fields: ${formData.fields.map((e) => '${e.key}: ${e.value}').join(', ')}');
       print('FormData files: ${formData.files.map((e) => e.key).join(', ')}');
+      print('Headers: ${_dio.options.headers}');
       print('========================');
       
       final response = await _dio.post(endpoint, data: formData);
@@ -135,6 +146,138 @@ class ApiService {
       print('Response Data: ${e.response?.data}');
       print('======================');
       throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
+    }
+  }
+
+  Future<dynamic> uploadFile(
+    String endpoint, {
+    required String filePath,
+    required String fieldName,
+    String? token,
+    Map<String, dynamic>? additionalData,
+  }) async {
+    if (token != null) {
+      _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+    _dio.options.headers['Content-Type'] = 'multipart/form-data';
+
+    final formData = FormData();
+    
+    // Add the file
+    formData.files.add(MapEntry(
+      fieldName,
+      await MultipartFile.fromFile(filePath),
+    ));
+
+    // Add any additional data
+    if (additionalData != null) {
+      additionalData.forEach((key, value) {
+        formData.fields.add(MapEntry(key, value.toString()));
+      });
+    }
+
+    try {
+      print('=== API UPLOAD FILE DEBUG ===');
+      print('Endpoint: $endpoint');
+      print('Field Name: $fieldName');
+      print('File Path: $filePath');
+      print('Headers: ${_dio.options.headers}');
+      print('============================');
+      
+      final response = await _dio.post(endpoint, data: formData);
+      
+      print('=== API RESPONSE DEBUG ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('=========================');
+      
+      return response.data;
+    } on DioException catch (e) {
+      print('=== API ERROR DEBUG ===');
+      print('Error Type: ${e.type}');
+      print('Error Message: ${e.message}');
+      print('Response Status: ${e.response?.statusCode}');
+      print('Response Data: ${e.response?.data}');
+      print('======================');
+      throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
+    }
+  }
+
+  Future<dynamic> putFormData(
+    String endpoint, {
+    required Map<String, dynamic> data,
+    File? mainImage,
+    List<File>? thumbnailImages,
+    String? token,
+  }) async {
+    if (token != null) {
+      _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+    _dio.options.headers['Content-Type'] = 'multipart/form-data';
+
+    // Create a copy of the data to avoid modifying the original
+    final Map<String, dynamic> formDataMap = Map<String, dynamic>.from(data);
+    
+    // Use FormData to combine text data and files
+    final formData = FormData.fromMap(formDataMap);
+
+    // Add main image if provided
+    if (mainImage != null) {
+      formData.files.add(MapEntry(
+        'main_image',
+        await MultipartFile.fromFile(mainImage.path),
+      ));
+    }
+    
+    // Add thumbnail images if provided
+    if (thumbnailImages != null && thumbnailImages.isNotEmpty) {
+      for (var i = 0; i < thumbnailImages.length; i++) {
+        formData.files.add(MapEntry(
+          'thumbnail_images[]',
+          await MultipartFile.fromFile(thumbnailImages[i].path),
+        ));
+      }
+    }
+
+    try {
+      print('=== API PUT FORM DATA DEBUG ===');
+      print('Endpoint: $endpoint');
+      print('FormData fields: ${formData.fields.map((e) => '${e.key}: ${e.value}').join(', ')}');
+      print('FormData files: ${formData.files.map((e) => e.key).join(', ')}');
+      print('Headers: ${_dio.options.headers}');
+      print('=============================');
+      
+      final response = await _dio.put(endpoint, data: formData);
+      
+      print('=== API RESPONSE DEBUG ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('=========================');
+      
+      return response.data;
+    } on DioException catch (e) {
+      print('=== API ERROR DEBUG ===');
+      print('Error Type: ${e.type}');
+      print('Error Message: ${e.message}');
+      print('Response Status: ${e.response?.statusCode}');
+      print('Response Data: ${e.response?.data}');
+      print('======================');
+      throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
     }
   }
 
@@ -144,12 +287,12 @@ class ApiService {
     }
     
     try {
-      print('=== API SERVICE PUT ===');
+      print('=== API PUT DEBUG ===');
       print('URL: $baseUrl$endpoint');
       print('Data: $data');
       print('Query: $query');
       print('Headers: ${_dio.options.headers}');
-      print('=======================');
+      print('====================');
 
       final response = await _dio.put(endpoint, data: data, queryParameters: query);
       
@@ -167,74 +310,47 @@ class ApiService {
       print('Status Code: ${e.response?.statusCode}');
       print('================');
       throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
     }
   }
 
-Future<dynamic> putFormData(
-  String endpoint, {
-  required Map<String, dynamic> data,
-  File? mainImage,
-  List<File>? thumbnailImages,
-  String? token,
-}) async {
-  if (token != null) {
-    _dio.options.headers['Authorization'] = 'Bearer $token';
-  }
-  _dio.options.headers['Content-Type'] = 'multipart/form-data';
-
-  // لإخبار الـ Backend بأن هذا الطلب هو PUT
-  final Map<String, dynamic> finalData = {...data, '_method': 'PUT'};
-
-  final formData = FormData.fromMap(finalData);
-
-  if (mainImage != null) {
-    formData.files.add(MapEntry(
-      'main_image',
-      await MultipartFile.fromFile(mainImage.path),
-    ));
-  }
-  
-  if (thumbnailImages != null && thumbnailImages.isNotEmpty) {
-    for (var file in thumbnailImages) {
-      formData.files.add(MapEntry(
-        'thumbnail_images[]',
-        await MultipartFile.fromFile(file.path),
-      ));
-    }
-  }
-
-  try {
-    // نستخدم post ولكن الـ backend سيعتبره PUT بسبب حقل _method
-    final response = await _dio.post(endpoint, data: formData);
-    return response.data;
-  } on DioException catch (e) {
-    throw ErrorHandler.handleDioError(e);
-  }
-}
-
-  Future<dynamic> uploadFile(
-    String endpoint, {
-    required String filePath,
-    required String fieldName,
-    String? token,
-  }) async {
+  Future<dynamic> delete(String endpoint, {Map<String, dynamic>? query, String? token}) async {
     if (token != null) {
       _dio.options.headers['Authorization'] = 'Bearer $token';
     }
-    _dio.options.headers['Content-Type'] = 'multipart/form-data';
-
-    final formData = FormData();
-    formData.files.add(MapEntry(
-      fieldName,
-      await MultipartFile.fromFile(filePath),
-    ));
-
+    
     try {
-      final response = await _dio.post(endpoint, data: formData);
+      print('=== API DELETE DEBUG ===');
+      print('URL: $baseUrl$endpoint');
+      print('Query: $query');
+      print('Headers: ${_dio.options.headers}');
+      print('=======================');
+
+      final response = await _dio.delete(endpoint, queryParameters: query);
+      
+      print('=== API RESPONSE ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('==================');
+      
       return response.data;
     } on DioException catch (e) {
+      print('=== API ERROR ===');
+      print('Error Type: ${e.type}');
+      print('Error Message: ${e.message}');
+      print('Response: ${e.response?.data}');
+      print('Status Code: ${e.response?.statusCode}');
+      print('================');
       throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      print('=== UNEXPECTED ERROR ===');
+      print('Error: $e');
+      print('======================');
+      rethrow;
     }
   }
-
 }
